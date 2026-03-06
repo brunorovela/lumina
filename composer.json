@@ -1,0 +1,90 @@
+{
+    "name": "rovela/integraflow",
+    "type": "project",
+    "keywords": [
+        "php",
+        "swoole",
+        "framework",
+        "hyperf",
+        "microservice",
+        "middleware"
+    ],
+    "description": "Orquestrador de serviços e integrações",
+    "license": "Apache-2.0",
+    "require": {
+        "php": ">=8.4",
+        "hyperf/cache": "~v3.1",
+        "hyperf/command": "~3.1",
+        "hyperf/config": "~3.1",
+        "hyperf/db-connection": "~3.1",
+        "hyperf/engine": "^2.15",
+        "hyperf/framework": "~3.1",
+        "hyperf/guzzle": "~3.1",
+        "hyperf/http-server": "~3.1",
+        "hyperf/logger": "~3.1",
+        "hyperf/memory": "~3.1",
+        "hyperf/process": "~3.1",
+        "hyperf/laminas-mime": "^3.0",
+        "hyperf/database": "~3.1",
+        "hyperf/redis": "~3.1"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.0",
+        "hyperf/devtool": "~3.1",
+        "hyperf/testing": "~3.1",
+        "hyperf/watcher": "~3.1",
+        "mockery/mockery": "^1.6",
+        "phpstan/phpstan": "^2.1",
+        "swoole/ide-helper": "^6.0"
+    },
+    "suggest": {
+        "ext-openssl": "Required to use HTTPS.",
+        "ext-json": "Required to use JSON.",
+        "ext-pdo": "Required to use MySQL Client.",
+        "ext-pdo_mysql": "Required to use MySQL Client.",
+        "ext-redis": "Required to use Redis Client."
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/"
+        },
+        "files": []
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "HyperfTest\\": "./test/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "extra": [],
+    "scripts": {
+        "post-root-package-install": [
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
+        ],
+        "post-autoload-dump": [
+            "rm -rf runtime/container"
+        ],
+        "test": [
+            "@cs-check",
+            "@php-unit",
+            "@analyse"
+        ],
+        "php-unit": "co-phpunit --prepend test/bootstrap.php --colors=always",
+        "cs-fix": "php-cs-fixer fix $1",
+        "cs-check": "php-cs-fixer fix --dry-run --diff",
+        "analyse": "phpstan analyse --memory-limit 512M -l 0",
+        "start": [
+            "Composer\\Config::disableProcessTimeout",
+            "php ./bin/hyperf.php start"
+        ],
+        "watch": [
+            "Composer\\Config::disableProcessTimeout",
+            "php ./bin/hyperf.php server:watch"
+        ]
+    }
+}

@@ -1,0 +1,5 @@
+# Dev: hot reload ao editar arquivos (app/, config/, .env).
+# Para produção, remova este arquivo ou use: docker compose -f docker-compose.yml up
+services:
+  integraflow:
+    command: ["server:watch"]

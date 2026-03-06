@@ -1,0 +1,46 @@
+# Modo watcher (hot reload): use
+#   docker compose run --rm integraflow php /opt/www/bin/hyperf.php server:watch
+# ou override o command no serviço integraflow com:
+#   command: ["php", "/opt/www/bin/hyperf.php", "server:watch"]
+services:
+  integraflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: integraflow
+    restart: always
+    ports:
+      - "9501:9501"
+    volumes:
+      - .:/opt/www
+    environment:
+      - APP_ENV=dev
+      - SCAN_CACHEABLE=false
+    env_file:
+      - .env
+    deploy:
+      resources:
+        limits:
+          memory: 2GB
+        reservations:
+          memory: 1GB
+
+  # Redis para Filas e Semáforos de Corrotinas
+  # hub-redis:
+  #   image: redis:alpine
+  #   container_name: hub-redis
+  #   restart: always
+  #   ports:
+  #     - "6379:6379"
+
+  # RabbitMQ para mensageria pesada (Opcional, mas recomendado para 500k registros)
+  # hub-rabbitmq:
+  #   image: rabbitmq:3-management-alpine
+  #   container_name: hub-rabbitmq
+  #   restart: always
+  #   ports:
+  #     - "5672:5672"
+  #     - "15672:15672" # Painel de controle do RabbitMQ
+  #   environment:
+  #     RABBITMQ_DEFAULT_USER: guest
+  #     RABBITMQ_DEFAULT_PASS: guest
