@@ -22,12 +22,12 @@ services:
           memory: 1GB
 
   # Redis para Filas e Semáforos de Corrotinas
-  # hub-redis:
-  #   image: redis:alpine
-  #   container_name: hub-redis
-  #   restart: always
-  #   ports:
-  #     - "6379:6379"
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: always
+    ports:
+      - "6380:6379"
 
   # RabbitMQ para mensageria pesada (Opcional, mas recomendado para 500k registros)
   # hub-rabbitmq:
