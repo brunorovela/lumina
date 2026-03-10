@@ -4,7 +4,7 @@ FROM hyperf/hyperf:8.4-alpine-v3.22-swoole-slim
 LABEL maintainer="Bruno Aurélio Rovela <bruno.rovela@principia.net>"
 
 # Na Slim, precisamos instalar os drivers de banco que o Hyperf/Cycle vão usar
-RUN apk add --no-cache php84-pdo_mysql php84-bcmath php84-intl
+RUN apk add --no-cache php84-pdo_mysql php84-bcmath php84-intl wrk
 
 WORKDIR /opt/www
 
