@@ -1,3 +1,13 @@
+
+# Gerar o Schema (Obrigatório)
+
+O Cycle ORM puro não "adivinha" o banco em tempo de execução sem um Schema compilado. Para o teste funcionar agora, você precisa de um script temporário para gerar esse schema:
+
+```shell
+php bin/hyperf.php vendor:publish cycle/orm
+```
+
+
 # Introduction
 
 This is a skeleton application using the Hyperf framework. This application is meant to be used as a starting place for those looking to get their feet wet with Hyperf Framework.
