@@ -7,6 +7,21 @@ O Cycle ORM puro não "adivinha" o banco em tempo de execução sem um Schema co
 php bin/hyperf.php vendor:publish cycle/orm
 ```
 
+# Testar endpoint
+
+wrk -t12 -c400 -d30s http://localhost:9501/test-native
+
+- 12 threads,
+- 400 connections,
+- 30 seconds duration,
+- GET /test-native
+
+# 2. Criando uma Validação para Pessoa
+Vamos criar um validador para o cadastro de uma nova pessoa na sua tabela unim_pessoa.
+
+```shell
+php bin/hyperf.php gen:request PessoaStoreRequest
+```
 
 # Introduction
 
