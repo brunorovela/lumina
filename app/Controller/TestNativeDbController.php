@@ -15,11 +15,11 @@ class TestNativeDbController
     public function index()
     {
         // O Db::connection('default') utiliza o Pool configurado no seu databases.php
-        $user = Db::table('unim_pessoa')->select('ds_nome')->first();
+        //$user = Db::table('unim_pessoa')->select('ds_nome')->first();
 
         return [
             'status' => 'Conectado via Hyperf Database Nativo',
-            'data' => $user,
+            'data' => '$user',
             'config' => [
                 'driver' => config('databases.default.driver'),
                 'pool_max' => config('databases.default.pool.max_connections'),

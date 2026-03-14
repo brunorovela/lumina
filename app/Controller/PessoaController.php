@@ -1,18 +1,47 @@
 <?php
+
+declare(strict_types=1);
+
 namespace App\Controller;
 
 use App\Request\PessoaStoreRequest;
-use App\Model\Pessoa;
+use App\Request\PessoaUpdateRequest;
+use App\Service\PessoaService;
+use Psr\Http\Message\ResponseInterface;
 
-class PessoaController extends AbstractController
+class PessoaController extends AbstractCrudController
 {
-    public function store(PessoaStoreRequest $request)
+    public function __construct(
+        protected PessoaService $pessoaService
+    ) {
+    }
+
+    protected function getService(): \App\Contract\ServiceInterface
     {
-        // Se o código chegar aqui, os dados JÁ ESTÃO VALIDADOS
-        $validated = $request->validated();
+        return $this->pessoaService;
+    }
 
-        $pessoa = Pessoa::create($validated);
+    public function store(PessoaStoreRequest $request): ResponseInterface
+    {
+        $data = $request->validated();
+        if ($data === [] && method_exists($request, 'getParsedBody')) {
+            $parsed = $request->getParsedBody();
+            $data = is_array($parsed) ? $parsed : [];
+        }
+        $pessoa = $this->pessoaService->criar($data);
 
-        return ['id' => $pessoa->cd_pessoa, 'status' => 'Criado'];
+        return $this->response->json([
+            'message' => 'Criado com sucesso',
+            'id' => $pessoa->cd_pessoa,
+        ])->withStatus(201);
+    }
+
+    public function update(int $id, PessoaUpdateRequest $request): ResponseInterface
+    {
+        $ok = $this->pessoaService->atualizar($id, $request->validated());
+        if (! $ok) {
+            return $this->response->json(['message' => 'Recurso não encontrado'])->withStatus(404);
+        }
+        return $this->response->json(['message' => 'Atualizado com sucesso']);
     }
 }

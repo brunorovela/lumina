@@ -37,7 +37,8 @@
         "hyperf/watcher": "~3.1",
         "mockery/mockery": "^1.6",
         "phpstan/phpstan": "^2.1",
-        "swoole/ide-helper": "^6.0"
+        "swoole/ide-helper": "^6.0",
+        "symfony/var-dumper": "^8.0"
     },
     "suggest": {
         "ext-openssl": "Required to use HTTPS.",
