@@ -71,6 +71,7 @@ abstract class AbstractCrudService implements ServiceInterface
     {
         $model = $this->repository->getModel();
         $fillable = array_flip($model->getFillable());
+
         $dados = array_intersect_key($dados, $fillable);
         $dados = array_filter($dados, fn ($v) => $v !== null);
         $model = $this->repository->create($dados);

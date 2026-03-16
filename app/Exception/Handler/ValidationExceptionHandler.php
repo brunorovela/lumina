@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace App\Exception\Handler;
 
+use App\Constants\HttpStatus;
 use Hyperf\ExceptionHandler\ExceptionHandler;
 use Hyperf\HttpMessage\Stream\SwooleStream;
 use Hyperf\Validation\ValidationException;
@@ -22,28 +23,32 @@ use function Hyperf\Support\env;
 
 class ValidationExceptionHandler extends ExceptionHandler
 {
-    private const int C_ERROR_CODE = 422;
-
     public function handle(Throwable $throwable, ResponseInterface $response)
     {
         $this->stopPropagation();
 
         /** @var ValidationException $throwable */
+        $status = HttpStatus::UNPROCESSABLE_ENTITY; // Centralizado no Enum
         $errors = $throwable->validator->errors()->all();
 
         $arrPayload = [
-            'status' => self::C_ERROR_CODE,
-            'error' => 'Erro de validação',
+            'status' => $status->value,
+            'error' => $status->getMessage(),
             'messages' => $errors,
         ];
 
-        if (env('APP_ENV') == 'dev') {
-            $arrPayload['dev'] = $throwable->getTraceAsString();
+        // Melhoria no Debug: Verificamos se NÃO é produção para ser mais abrangente
+        if (env('APP_ENV') !== 'production') {
+            $arrPayload['dev'] = [
+                'message' => $throwable->getMessage(),
+                'trace' => $throwable->getTraceAsString(),
+            ];
         }
 
         $data = json_encode($arrPayload, JSON_UNESCAPED_UNICODE);
 
-        return $response->withStatus(self::C_ERROR_CODE)
+        // Usamos $status->value tanto para o corpo quanto para o status da resposta
+        return $response->withStatus($status->value)
             ->withHeader('Content-Type', 'application/json')
             ->withBody(new SwooleStream($data));
     }

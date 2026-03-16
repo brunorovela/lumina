@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace App\Exception\Handler;
 
+use App\Constants\HttpStatus;
 use Hyperf\ExceptionHandler\ExceptionHandler;
 use Hyperf\HttpMessage\Stream\SwooleStream;
 use Psr\Http\Message\ResponseInterface;
@@ -21,32 +22,38 @@ use function Hyperf\Support\env;
 
 class AppExceptionHandler extends ExceptionHandler
 {
-    private const int C_ERROR_CODE = 500;
-
     public function handle(Throwable $throwable, ResponseInterface $response)
     {
-        // Mantemos o log para debug interno
-        // $this->logger->error(sprintf('%s[%s] in %s', $throwable->getMessage(), $throwable->getLine(), $throwable->getFile()));
+        $status = HttpStatus::INTERNAL_SERVER_ERROR;
 
         $arrPayload = [
-            'status' => self::C_ERROR_CODE,
-            'error' => 'Erro Interno',
-            'message' => 'Ocorreu um erro inesperado no servidor.',
+            'status' => $status->value,
+            'error' => $status->getMessage(),
+            'messages' => ['Ocorreu um erro interno inesperado no servidor.'],
         ];
 
-        if (env('APP_ENV') == 'dev') {
-            $arrPayload['dev'] = $throwable->getTraceAsString();
+        // 3. Lógica de Debug para ambientes que não sejam produção
+        if (env('APP_ENV') !== 'production') {
+            $arrPayload['dev'] = [
+                'exception' => get_class($throwable),
+                'message' => $throwable->getMessage(),
+                'file' => $throwable->getFile(),
+                'line' => $throwable->getLine(),
+                'trace' => explode("\n", $throwable->getTraceAsString()), // Array facilita a leitura no JSON
+            ];
         }
 
         $data = json_encode($arrPayload, JSON_UNESCAPED_UNICODE);
 
-        return $response->withStatus(self::C_ERROR_CODE)
+        // 4. Retorno padronizado
+        return $response->withStatus($status->value)
             ->withHeader('Content-Type', 'application/json')
             ->withBody(new SwooleStream($data));
     }
 
     public function isValid(Throwable $throwable): bool
     {
+        // Sempre verdadeiro pois é a última rede de proteção da aplicação
         return true;
     }
 }

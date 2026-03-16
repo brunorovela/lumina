@@ -27,11 +27,9 @@ class PessoaController extends AbstractCrudController
 
     public function store(PessoaStoreRequest $request): ResponseInterface
     {
+        // Agora o validated() trará todos os campos definidos no Request acima
         $data = $request->validated();
-        if ($data === [] && method_exists($request, 'getParsedBody')) {
-            $parsed = $request->getParsedBody();
-            $data = is_array($parsed) ? $parsed : [];
-        }
+
         $pessoa = $this->pessoaService->criar($data);
 
         return $this->response->json([
