@@ -1,16 +1,23 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace App\Service;
 
 use App\Repository\PessoaFisicaRepository;
-use Hyperf\Di\Annotation\Inject;
+use Psr\SimpleCache\CacheInterface;
 
 class PessoaFisicaService extends AbstractCrudService
 {
-    #[Inject]
-    public function __construct(PessoaFisicaRepository $repository, \Psr\SimpleCache\CacheInterface $cache)
+    public function __construct(PessoaFisicaRepository $repository, CacheInterface $cache)
     {
         parent::__construct($repository, $cache);
     }

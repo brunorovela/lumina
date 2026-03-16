@@ -14,24 +14,27 @@ namespace App\Exception\Handler;
 
 use Hyperf\ExceptionHandler\ExceptionHandler;
 use Hyperf\HttpMessage\Stream\SwooleStream;
+use Hyperf\Validation\ValidationException;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
 
 use function Hyperf\Support\env;
 
-class AppExceptionHandler extends ExceptionHandler
+class ValidationExceptionHandler extends ExceptionHandler
 {
-    private const int C_ERROR_CODE = 500;
+    private const int C_ERROR_CODE = 422;
 
     public function handle(Throwable $throwable, ResponseInterface $response)
     {
-        // Mantemos o log para debug interno
-        // $this->logger->error(sprintf('%s[%s] in %s', $throwable->getMessage(), $throwable->getLine(), $throwable->getFile()));
+        $this->stopPropagation();
+
+        /** @var ValidationException $throwable */
+        $errors = $throwable->validator->errors()->all();
 
         $arrPayload = [
             'status' => self::C_ERROR_CODE,
-            'error' => 'Erro Interno',
-            'message' => 'Ocorreu um erro inesperado no servidor.',
+            'error' => 'Erro de validação',
+            'messages' => $errors,
         ];
 
         if (env('APP_ENV') == 'dev') {
@@ -47,6 +50,6 @@ class AppExceptionHandler extends ExceptionHandler
 
     public function isValid(Throwable $throwable): bool
     {
-        return true;
+        return $throwable instanceof ValidationException;
     }
 }

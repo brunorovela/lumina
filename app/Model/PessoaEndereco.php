@@ -1,6 +1,14 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace App\Model;
 
@@ -17,6 +25,10 @@ namespace App\Model;
  */
 class PessoaEndereco extends Model
 {
+    public bool $incrementing = false;
+
+    public bool $timestamps = false;
+
     protected ?string $table = 'unim_pessoa_endereco';
 
     /**
@@ -24,12 +36,10 @@ class PessoaEndereco extends Model
      * definimos que a chave primária não é incrementável.
      */
     protected string $primaryKey = 'cd_pessoa';
-    public bool $incrementing = false;
-    public bool $timestamps = false;
 
     protected array $fillable = [
         'cd_pessoa', 'cd_pais', 'cd_estado', 'cd_cidade',
-        'ds_cep', 'ds_bairro', 'ds_logradouro', 'ds_numero', 'ds_complemento'
+        'ds_cep', 'ds_bairro', 'ds_logradouro', 'ds_numero', 'ds_complemento',
     ];
 
     protected array $casts = [

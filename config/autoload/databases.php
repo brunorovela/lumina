@@ -1,7 +1,14 @@
 <?php
 
 declare(strict_types=1);
-
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 use function Hyperf\Support\env;
 
 return [
@@ -13,7 +20,7 @@ return [
         'write' => [
             'host' => [env('DB_WRITE_HOST', '')],
         ],
-        'sticky'    => true, // VITAL: Garante que se você escreveu algo na mesma requisição, a leitura venha do Master para evitar lag de replicação
+        'sticky' => true, // VITAL: Garante que se você escreveu algo na mesma requisição, a leitura venha do Master para evitar lag de replicação
         'host' => env('DB_HOST', ''),
         'database' => env('DB_DATABASE', ''),
         'port' => env('DB_PORT', 3306),
@@ -26,9 +33,9 @@ return [
             'min_connections' => 32,   // Mantém mais conexões prontas para uso imediato
             'max_connections' => 512,  // Aumente significativamente para suportar a fila de corrotinas
             'connect_timeout' => 10.0,
-            'wait_timeout'    => 10.0, // Dá mais tempo para a corrotina esperar um slot livre no pool
-            'heartbeat'       => -1,
-            'max_idle_time'   => (float) env('DB_MAX_IDLE_TIME', 60),
+            'wait_timeout' => 10.0, // Dá mais tempo para a corrotina esperar um slot livre no pool
+            'heartbeat' => -1,
+            'max_idle_time' => (float) env('DB_MAX_IDLE_TIME', 60),
         ],
         'commands' => [
             'gen:model' => [

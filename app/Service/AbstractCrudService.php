@@ -1,13 +1,20 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace App\Service;
 
 use App\Contract\RepositoryInterface;
 use App\Contract\ServiceInterface;
 use App\Model\Model;
-use Hyperf\Di\Annotation\Inject;
 use Psr\SimpleCache\CacheInterface;
 
 /**
@@ -22,19 +29,8 @@ abstract class AbstractCrudService implements ServiceInterface
 
     public function __construct(
         protected RepositoryInterface $repository,
-        #[Inject]
         protected CacheInterface $cache
     ) {
-    }
-
-    /**
-     * Chave única do recurso para cache (ex: pessoa, pessoa_fisica).
-     */
-    abstract protected function getResourceKey(): string;
-
-    protected function cacheKey(string $suffix): string
-    {
-        return $this->cachePrefix . ':' . $this->getResourceKey() . ':' . $suffix;
     }
 
     public function listagem(array $filtros = []): array
@@ -100,6 +96,16 @@ abstract class AbstractCrudService implements ServiceInterface
             $this->invalidarCacheListagem();
         }
         return $ok;
+    }
+
+    /**
+     * Chave única do recurso para cache (ex: pessoa, pessoa_fisica).
+     */
+    abstract protected function getResourceKey(): string;
+
+    protected function cacheKey(string $suffix): string
+    {
+        return $this->cachePrefix . ':' . $this->getResourceKey() . ':' . $suffix;
     }
 
     protected function invalidarCacheItem(int $id): void

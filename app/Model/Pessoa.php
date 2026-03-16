@@ -1,6 +1,14 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace App\Model;
 
@@ -24,6 +32,12 @@ use Carbon\Carbon;
  */
 class Pessoa extends Model
 {
+    /**
+     * Desativa os timestamps padrão do Eloquent (created_at/updated_at),
+     * já que sua estrutura utiliza dt_cadastro e dt_base manualmente.
+     */
+    public bool $timestamps = false;
+
     /**
      * Tabela associada no banco de dados.
      */
@@ -67,12 +81,6 @@ class Pessoa extends Model
     ];
 
     /**
-     * Desativa os timestamps padrão do Eloquent (created_at/updated_at),
-     * já que sua estrutura utiliza dt_cadastro e dt_base manualmente.
-     */
-    public bool $timestamps = false;
-
-    /**
      * Exemplo de Relacionamento: Pessoa Física.
      * Uma Pessoa pode ter um registro detalhado em unim_pessoa_fisica.
      */
@@ -92,6 +100,7 @@ class Pessoa extends Model
     /**
      * Mutator para Criptografia de Senha.
      * Garante que a senha sempre seja salva como hash.
+     * @param mixed $value
      */
     public function setDsSenhaAttribute($value): void
     {

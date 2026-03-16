@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 /**
- * Watcher config — hot reload em desenvolvimento.
- * No Docker use o driver ScanFileDriver (não depende de fswatch).
+ * This file is part of Hyperf.
  *
  * @link     https://www.hyperf.io
  * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
  */
 use Hyperf\Watcher\Driver\ScanFileDriver;
 
