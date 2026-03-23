@@ -9,15 +9,25 @@ declare(strict_types=1);
  * @contact  group@hyperf.io
  * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
  */
+
+use App\Constants\Permission;
 use App\Controller\PessoaController;
 use App\Controller\PessoaEnderecoController;
 use App\Controller\PessoaFisicaController;
+use App\Middleware\AclMiddleware;
 use Hyperf\HttpServer\Router\Router;
 
 Router::addRoute(['GET', 'POST', 'HEAD'], '/', 'App\Controller\IndexController@index');
 
 // CRUD Pessoa
-Router::get('/pessoa', [PessoaController::class, 'index']);
+Router::get('/pessoa', [PessoaController::class, 'index'],[
+    'middleware' => [AclMiddleware::class],
+    'options' => [
+        'acl_resource' => 'Pessoa.Gerenciamento',
+        'acl_level' => Permission::ACESSAR
+    ]
+]);
+
 Router::get('/pessoa/{id:\d+}', [PessoaController::class, 'show']);
 Router::post('/pessoa', [PessoaController::class, 'store']);
 Router::put('/pessoa/{id:\d+}', [PessoaController::class, 'update']);
