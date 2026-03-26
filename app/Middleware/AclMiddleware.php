@@ -38,11 +38,11 @@ class AclMiddleware implements MiddlewareInterface
 
         $cdPerfil = (int) $request->getAttribute('user_profile_id', 0);
         if ($cdPerfil <= 0) {
-                 return $this->response->json(['error' => 'Não autenticado'])->withStatus(401);
+            return $this->response->json(['error' => 'Não autenticado'])->withStatus(401);
         }
 
         if (! $this->acl->isAllowed($cdPerfil, $resource, $level)) {
-               return $this->response->json(['error' => 'Acesso negado para este recurso'])->withStatus(403);
+            return $this->response->json(['error' => 'Acesso negado para este recurso'])->withStatus(403);
         }
 
         return $handler->handle($request);

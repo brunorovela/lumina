@@ -1,7 +1,14 @@
 <?php
 
 declare(strict_types=1);
-
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 use function Hyperf\Support\env;
 
 /**
@@ -15,7 +22,7 @@ return [
     'enable' => env('SWAGGER_ENABLE', true),
     'port' => (int) env('SWAGGER_PORT', 9500),
     'json_dir' => BASE_PATH . '/storage/swagger',
-    /** HTML custom: evita CDN unpkg.hyperf.wiki (costuma travar / falhar fora da rede deles) */
+    /* HTML custom: evita CDN unpkg.hyperf.wiki (costuma travar / falhar fora da rede deles) */
     'html' => is_readable($swaggerUiHtml) ? (string) file_get_contents($swaggerUiHtml) : null,
     'url' => env('SWAGGER_URL_PATH', '/swagger'),
     'auto_generate' => filter_var(env('SWAGGER_AUTO_GENERATE', true), FILTER_VALIDATE_BOOLEAN),

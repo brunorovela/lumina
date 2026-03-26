@@ -1,6 +1,14 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace App\OpenApi;
 
@@ -9,7 +17,7 @@ use OpenApi\Attributes as OA;
 
 /**
  * Stubs só para documentação OpenAPI (Hyperf BuildPathsProcessor exige #[HyperfServer] na classe).
- * Rotas reais: config/routes.php
+ * Rotas reais: config/routes.php.
  */
 #[HyperfServer(name: 'http')]
 final class ApiOperations
