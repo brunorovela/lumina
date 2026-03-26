@@ -1,0 +1,45 @@
+{
+  "workflow_version": "1.2.0",
+  "timestamps": {
+    "started": "2026-03-26T00:00:00Z",
+    "last_updated": "2026-03-26T00:00:00Z",
+    "completed": "2026-03-26T00:00:00Z"
+  },
+  "mode": "initial_scan",
+  "scan_level": "deep",
+  "project_root": "/home/brovela/www/lumina",
+  "project_knowledge": "{project-root}/docs (artefatos gravados em _bmad-output/project-docs por permissão)",
+  "completed_steps": [
+    {"step": "step_1", "status": "completed", "timestamp": "2026-03-26T00:00:00Z", "summary": "Classificado como monólito backend (project_type_id: backend), 1 parte"},
+    {"step": "step_2", "status": "completed", "timestamp": "2026-03-26T00:00:00Z", "summary": "README e _bmad-output inventariados"},
+    {"step": "step_3", "status": "completed", "timestamp": "2026-03-26T00:00:00Z", "summary": "Stack: PHP 8.4, Hyperf 3.1, MySQL, Redis"},
+    {"step": "step_4", "status": "completed", "timestamp": "2026-03-26T00:00:00Z", "summary": "API e modelos documentados em markdown"},
+    {"step": "step_5", "status": "completed", "timestamp": "2026-03-26T00:00:00Z", "summary": "source-tree-analysis.md gerado"},
+    {"step": "step_6", "status": "completed", "timestamp": "2026-03-26T00:00:00Z", "summary": "development-guide.md gerado"},
+    {"step": "step_8", "status": "completed", "timestamp": "2026-03-26T00:00:00Z", "summary": "architecture.md gerado"},
+    {"step": "step_9", "status": "completed", "timestamp": "2026-03-26T00:00:00Z", "summary": "project-overview.md gerado"},
+    {"step": "step_10", "status": "completed", "timestamp": "2026-03-26T00:00:00Z", "summary": "index.md gerado"},
+    {"step": "step_12", "status": "completed", "timestamp": "2026-03-26T00:00:00Z", "summary": "Workflow document-project concluído (autônomo)"}
+  ],
+  "current_step": "completed",
+  "findings": {
+    "project_classification": {
+      "repository_type": "monolith",
+      "project_type_id": "backend",
+      "primary_framework": "Hyperf",
+      "language": "PHP"
+    },
+    "technology_stack": "Hyperf 3.x, Swoole, MySQL, Redis, PSR-16 cache"
+  },
+  "outputs_generated": [
+    "index.md",
+    "project-overview.md",
+    "architecture.md",
+    "source-tree-analysis.md",
+    "api-contracts.md",
+    "data-models.md",
+    "development-guide.md",
+    "project-scan-report.json"
+  ],
+  "resume_instructions": "Workflow finalizado; reexecute scan após mudanças grandes no app/ ou config/"
+}

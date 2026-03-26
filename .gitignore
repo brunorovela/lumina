@@ -12,6 +12,7 @@ vendor/
 .phpunit*
 *.cache
 .vscode/
+.cursor/
 /phpstan.neon
 /phpunit.xml
 .github

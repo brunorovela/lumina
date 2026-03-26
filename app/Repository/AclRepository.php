@@ -1,6 +1,14 @@
 <?php
 
 declare(strict_types=1);
+/**
+ * This file is part of Hyperf.
+ *
+ * @link     https://www.hyperf.io
+ * @document https://hyperf.wiki
+ * @contact  group@hyperf.io
+ * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
+ */
 
 namespace App\Repository;
 
@@ -26,7 +34,7 @@ class AclRepository
         foreach ($data as $row) {
             // Converte o nome do privilégio em bit ou usa uma lógica de soma pré-definida
             $bit = $this->mapPrivilegeToBit($row->privilegio);
-            if (!isset($aclMap[$row->recurso])) {
+            if (! isset($aclMap[$row->recurso])) {
                 $aclMap[$row->recurso] = 0;
             }
             $aclMap[$row->recurso] |= $bit;
