@@ -7,6 +7,8 @@ services:
     restart: always
     ports:
       - "9501:9501"
+      # Swagger UI (hyperf/swagger — servidor dedicado, ver config/autoload/swagger.php)
+      - "9500:9500"
     volumes:
       - .:/opt/www
     environment:
