@@ -40,6 +40,9 @@ class DbQueryExecutedListener implements ListenerInterface
         ];
     }
 
+    /**
+     * @param QueryExecuted $event
+     */
     public function process(object $event): void
     {
         if ($event instanceof QueryExecuted) {
