@@ -1,5 +1,5 @@
 # Dockerfile
-FROM hyperf/hyperf:8.4-alpine-v3.22-swoole-slim
+FROM hyperf/hyperf:8.4-alpine-v3.23-swoole-slim
 
 LABEL maintainer="Bruno Aurélio Rovela <bruno.rovela@principia.net>"
 

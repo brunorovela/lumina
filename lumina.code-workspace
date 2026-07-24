@@ -1,0 +1,18 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"php.validate.executablePath": "/home/brovela/php-docker/php-docker-lumina.sh",
+		"intelephense.environment.phpVersion": "7.4",
+		"python.defaultInterpreterPath": "/bin/python3",
+		"files.encoding": "utf8",
+		"files.eol": "\n",
+		"editor.insertSpaces": true,
+		"editor.tabSize": 4,
+		"files.trimTrailingWhitespace": true,
+		"files.insertFinalNewline": true,
+	}
+}
