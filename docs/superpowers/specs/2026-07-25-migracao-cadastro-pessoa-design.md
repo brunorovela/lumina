@@ -93,7 +93,7 @@ Todas as rotas atrás de `AuthMiddleware` + `AclMiddleware` (resource `pessoa`):
 |---|---|---|
 | `POST /pessoas` | `criar` | Cadastra |
 | `PUT /pessoas/{id}` | `atualizar` | Substitui completo — payload exige todos campos |
-| `PATCH /pessoas/{id}` | `atualizar` | Parcial — só campos enviados, exige ao menos 1 |
+| `PATCH /pessoas/{id}` | `atualizar` | Parcial — só campos enviados, exige ao menos 1. **`sn_pessoa_juridica` não é aceito no PATCH** (trocar o tipo física↔jurídica é mudança estrutural, não parcial — decisão consistente já refletida em `PatchPessoaRequest` e `PessoaService::atualizarParcial`, formalizada aqui na revisão da Task 12) |
 | `DELETE /pessoas/{id}` | `excluir` | Soft-delete |
 | `GET /pessoas/{id}` | `visualizar` | Busca |
 | `GET /pessoas` | `listar` | Lista paginada |
