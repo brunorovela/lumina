@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace App\Repository\Pessoa;
 
+use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Model\Pessoa\UnimPessoa;
 use App\Model\Pessoa\UnimPessoaFisica;
 use App\Model\Pessoa\UnimPessoaJuridica;
@@ -44,7 +45,12 @@ class PessoaRepository implements PessoaRepositoryInterface
         ?array $dadosJuridica
     ): UnimPessoa {
         return Db::transaction(function () use ($cdPessoa, $cdCliente, $dadosPessoa, $dadosFisica, $dadosJuridica) {
-            $pessoa = UnimPessoa::where('cd_pessoa', $cdPessoa)->where('cd_cliente', $cdCliente)->firstOrFail();
+            $pessoa = UnimPessoa::where('cd_pessoa', $cdPessoa)->where('cd_cliente', $cdCliente)->first();
+
+            if ($pessoa === null) {
+                throw new PessoaNaoEncontradaException();
+            }
+
             $pessoa->update($dadosPessoa);
 
             if ($dadosFisica !== null) {

@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace HyperfTest\Cases\Repository\Pessoa;
 
+use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Repository\Pessoa\PessoaRepositoryInterface;
 use Hyperf\DbConnection\Db;
 use Hyperf\Testing\TestCase;
@@ -101,6 +102,15 @@ class PessoaRepositoryTest extends TestCase
 
         $this->assertSame('Atualiza Teste Renomeado', $atualizada->ds_nome);
         $this->assertSame('hash-original', $atualizada->ds_senha);
+    }
+
+    public function testAtualizarPessoaInexistenteLancaExcecao()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $this->expectException(PessoaNaoEncontradaException::class);
+
+        $repository->atualizar(999999, 1, ['ds_nome' => 'Nao Existe'], null, null);
     }
 
     public function testListarFiltraPorNomeETipoPessoaEPaginaCertoDentroDoCliente()
