@@ -152,9 +152,9 @@ class PessoaController extends AbstractController
             PessoaResource::muitos($resultado['itens']),
             [
                 'total' => $resultado['total'],
-                'per_page' => $perPage,
+                'per_page' => $resultado['per_page'],
                 'current_page' => $page,
-                'last_page' => (int) ceil($resultado['total'] / $perPage),
+                'last_page' => (int) ceil($resultado['total'] / $resultado['per_page']),
             ]
         ));
     }

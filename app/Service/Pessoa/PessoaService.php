@@ -16,6 +16,7 @@ use App\Exception\Pessoa\LoginJaExisteException;
 use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Model\Pessoa\UnimPessoa;
 use App\Repository\Pessoa\PessoaRepositoryInterface;
+use Hyperf\Database\Model\Collection;
 
 class PessoaService
 {
@@ -80,11 +81,20 @@ class PessoaService
         return $pessoa;
     }
 
+    /**
+     * @return array{itens: Collection, total: int, per_page: int}
+     */
     public function listar(int $cdCliente, array $filtros, int $page, int $perPage): array
     {
+        // O per_page EFETIVO (clampado) precisa voltar pro Controller montar o `meta` --
+        // senão meta.per_page/last_page mentem quando o cliente pede per_page > 100
+        // (Finding 5, whole-branch review: o Controller usava o per_page ORIGINAL do
+        // request pro meta, mas a paginação de fato rodava com o clampado).
         $perPage = min($perPage, 100);
 
-        return $this->pessoaRepository->listar($cdCliente, $filtros, $page, $perPage);
+        $resultado = $this->pessoaRepository->listar($cdCliente, $filtros, $page, $perPage);
+
+        return [...$resultado, 'per_page' => $perPage];
     }
 
     public function excluir(int $cdPessoa, int $cdCliente): void

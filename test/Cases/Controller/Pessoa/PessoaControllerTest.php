@@ -169,6 +169,17 @@ class PessoaControllerTest extends TestCase
         $this->assertGreaterThanOrEqual(1, $listar->json('meta.total'));
     }
 
+    public function testMetaPerPageEUltimaPaginaRefletemOValorClampadoNaoOOriginal()
+    {
+        // Finding 5 (whole-branch review): PessoaService::listar() clampa per_page pra
+        // 100 internamente, mas o Controller montava o meta com o per_page ORIGINAL do
+        // request -- meta.per_page/last_page mentiam quando o cliente pedia per_page > 100.
+        $listar = $this->get('/pessoas?per_page=500', [], $this->headers());
+
+        $listar->assertStatus(200);
+        $this->assertSame(100, $listar->json('meta.per_page'));
+    }
+
     public function testSemTokenRetorna401()
     {
         $this->get('/pessoas')->assertStatus(401);
