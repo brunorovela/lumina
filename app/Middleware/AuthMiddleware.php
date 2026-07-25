@@ -20,6 +20,7 @@ use Psr\Http\Message\ResponseInterface as PsrResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Throwable;
 
 class AuthMiddleware implements MiddlewareInterface
 {
@@ -31,7 +32,11 @@ class AuthMiddleware implements MiddlewareInterface
     {
         $token = str_replace('Bearer ', '', $request->getHeaderLine('Authorization'));
 
-        $identidade = $token === '' ? null : $this->authService->identidadePorToken($token);
+        try {
+            $identidade = $token === '' ? null : $this->authService->identidadePorToken($token);
+        } catch (Throwable $e) {
+            $identidade = null;
+        }
 
         if ($identidade === null) {
             return $this->response
