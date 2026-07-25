@@ -43,6 +43,26 @@ services:
   #     RABBITMQ_DEFAULT_USER: guest
   #     RABBITMQ_DEFAULT_PASS: guest
 
+  # Documentação (Swagger UI) do http.json gerado em storage/swagger
+  lumina-docs:
+    image: techsuperior/web-swagger
+    container_name: lumina-docs
+    working_dir: /swagger
+    restart: unless-stopped
+    depends_on:
+      - lumina
+    command: open-swagger-ui ./http.json
+    ports:
+      - "8082:3355" # 8081 já é usado pelo lms-api-doc do legado no mesmo uni_sup_network — conferir antes de subir
+    volumes:
+      - ./storage/swagger:/swagger
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
+
 networks:
 
   default:
