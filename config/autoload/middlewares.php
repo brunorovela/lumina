@@ -11,6 +11,6 @@ declare(strict_types=1);
  */
 return [
     'http' => [
-        // App\Middleware\AclMiddleware::class,
+        // AclMiddleware é referenciado por rota individualmente (ver Task 14), não aqui.
     ],
 ];
