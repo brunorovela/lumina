@@ -107,7 +107,7 @@ Todas as rotas atrás de `AuthMiddleware` + `AclMiddleware` (resource `pessoa`):
 
 ### Soft-delete
 
-- Migration adiciona `dt_excluido` (datetime nullable) em `unim_pessoa` — segue a mesma convenção usada em 10+ tabelas do legado (`dt_excluido IS NULL` = ativo).
+- Migration (via `hyperf/database`, comando `gen:migration`/`migrate` — mecanismo a confirmar no plano de implementação) adiciona `dt_excluido` (datetime nullable) em `unim_pessoa` — segue a mesma convenção usada em 10+ tabelas do legado (`dt_excluido IS NULL` = ativo).
 - Model usa `SoftDeletes` nativo do Eloquent (`const DELETED_AT = 'dt_excluido'`) — toda query já ignora excluído automaticamente. Isso é uma melhoria sobre o legado, que exige adicionar o filtro manualmente em cada query/join (fonte real de bug se esquecido).
 - `DELETE /pessoas/{id}` seta `dt_excluido = now()`, nunca remove linha. Sem endpoint de restaurar nesta primeira versão.
 
@@ -115,8 +115,9 @@ Todas as rotas atrás de `AuthMiddleware` + `AclMiddleware` (resource `pessoa`):
 
 - `GET /pessoas/{id}`: filtra por `cd_cliente` do contexto + `id` sempre juntos. Não achou (ou é de outro cliente) → `PessoaNaoEncontradaException` (404) — nunca revela que existe em outro cliente.
 - `GET /pessoas`: query params `page` (default 1), `per_page` (default 20, máx 100 — clampa, não erra se vier maior), `nome` (LIKE parcial em `ds_nome`), `tipo_pessoa` (`fisica`|`juridica` → mapeia pra `sn_pessoa_juridica`). `cd_cliente` sempre do contexto, nunca filtro opcional.
-- Resposta: `{ success: true, data: [...], meta: { total, per_page, current_page, last_page } }`.
+- Resposta da listagem: `{ success: true, data: [...], meta: { total, per_page, current_page, last_page } }`. Resposta de recurso único (get/create/update) **não tem** `meta`: `{ success: true, data: {...} }`.
 - `PessoaResource` formata toda saída — nunca expõe `ds_senha`.
+- Status HTTP de sucesso: `201` no create, `200` nos demais (get/list/put/patch/delete). Delete não retorna corpo vazio (`204`) — devolve o envelope padrão com a pessoa já marcada como excluída, consistente com o resto da API.
 
 ## OpenAPI / Swagger
 
