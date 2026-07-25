@@ -16,14 +16,19 @@
         "hyperf/cache": "~3.2.0",
         "hyperf/command": "~3.2.0",
         "hyperf/config": "~3.2.0",
+        "hyperf/database": "^3.2",
+        "hyperf/db-connection": "^3.2",
         "hyperf/engine": "^2.10",
         "hyperf/framework": "~3.2.0",
         "hyperf/guzzle": "~3.2.0",
         "hyperf/http-server": "~3.2.0",
+        "hyperf/laminas-mime": "^3.0",
         "hyperf/logger": "~3.2.0",
         "hyperf/memory": "~3.2.0",
         "hyperf/process": "~3.2.0",
-        "hyperf/laminas-mime": "^3.0"
+        "hyperf/redis": "^3.2",
+        "hyperf/swagger": "^3.2",
+        "hyperf/validation": "^3.2"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.0",
