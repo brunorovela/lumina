@@ -106,6 +106,25 @@ class AuthServiceTest extends TestCase
         $this->assertTrue(password_verify('senhafraca', $hashAtual));
     }
 
+    public function testAutenticaComSenhaTextoPuroEFazUpgradeSilenciosoPraBcrypt()
+    {
+        Db::table('unim_pessoa')->insert([
+            'cd_cliente' => 1,
+            'ds_nome' => 'Auth Texto Puro Teste',
+            'ds_login' => 'teste.auth.textopuro',
+            'ds_senha' => 'senhasemhash',
+            'sn_pessoa_juridica' => 0,
+        ]);
+
+        $authService = $this->getContainer()->get(AuthService::class);
+        $token = $authService->autenticar(1, 'teste.auth.textopuro', 'senhasemhash');
+
+        $this->assertNotEmpty($token);
+
+        $hashAtual = Db::table('unim_pessoa')->where('ds_login', 'teste.auth.textopuro')->value('ds_senha');
+        $this->assertTrue(password_verify('senhasemhash', $hashAtual));
+    }
+
     public function testSenhaErradaNaoAutentica()
     {
         Db::table('unim_pessoa')->insert([

@@ -36,13 +36,15 @@ class AuthService
             throw new CredenciaisInvalidasException();
         }
 
-        $senhaBate = $this->verificarSenha($dsSenha, $pessoa->ds_senha);
+        $mecanismo = $this->verificarSenha($dsSenha, $pessoa->ds_senha);
 
-        if (! $senhaBate) {
+        if ($mecanismo === null) {
             throw new CredenciaisInvalidasException();
         }
 
-        $this->atualizarHashSeNecessario($pessoa->cd_pessoa, $dsSenha, $pessoa->ds_senha);
+        if ($mecanismo !== 'bcrypt') {
+            $this->atualizarHash($pessoa->cd_pessoa, $dsSenha);
+        }
 
         $token = bin2hex(random_bytes(32));
 
@@ -92,25 +94,32 @@ class AuthService
             ->all();
     }
 
-    private function verificarSenha(string $senhaInformada, string $senhaBanco): bool
+    /**
+     * Computa a cascata de verificacao uma unica vez e devolve qual mecanismo bateu, para
+     * que autenticar() decida o upgrade sem re-chamar password_verify() (BCrypt eh
+     * deliberadamente caro — recalcular no hot path de login dobraria o custo de CPU).
+     *
+     * @return null|'bcrypt'|'md5'|'texto_puro'
+     */
+    private function verificarSenha(string $senhaInformada, string $senhaBanco): ?string
     {
         if (password_verify($senhaInformada, $senhaBanco)) {
-            return true;
+            return 'bcrypt';
         }
 
         if (md5($senhaInformada) === $senhaBanco) {
-            return true;
+            return 'md5';
         }
 
-        return $senhaInformada === $senhaBanco;
+        if ($senhaInformada === $senhaBanco) {
+            return 'texto_puro';
+        }
+
+        return null;
     }
 
-    private function atualizarHashSeNecessario(int $cdPessoa, string $senhaInformada, string $senhaBanco): void
+    private function atualizarHash(int $cdPessoa, string $senhaInformada): void
     {
-        if (password_verify($senhaInformada, $senhaBanco)) {
-            return;
-        }
-
         Db::table('unim_pessoa')
             ->where('cd_pessoa', $cdPessoa)
             ->update(['ds_senha' => password_hash($senhaInformada, PASSWORD_BCRYPT)]);
