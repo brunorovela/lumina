@@ -31,7 +31,7 @@ class PessoaService
             throw new LoginJaExisteException();
         }
 
-        [$dadosPessoa, $dadosFisica, $dadosJuridica] = $this->separarDados($cdCliente, $dados, criando: true);
+        [$dadosPessoa, $dadosFisica, $dadosJuridica] = $this->separarDados($cdCliente, $dados);
 
         return $this->pessoaRepository->criar($dadosPessoa, $dadosFisica, $dadosJuridica);
     }
@@ -40,7 +40,7 @@ class PessoaService
     {
         $this->garantirLoginDisponivel($cdPessoa, $cdCliente, $dados['ds_login']);
 
-        [$dadosPessoa, $dadosFisica, $dadosJuridica] = $this->separarDados($cdCliente, $dados, criando: false);
+        [$dadosPessoa, $dadosFisica, $dadosJuridica] = $this->separarDados($cdCliente, $dados);
 
         return $this->pessoaRepository->atualizar($cdPessoa, $cdCliente, $dadosPessoa, $dadosFisica, $dadosJuridica);
     }
@@ -101,7 +101,7 @@ class PessoaService
         }
     }
 
-    private function separarDados(int $cdCliente, array $dados, bool $criando): array
+    private function separarDados(int $cdCliente, array $dados): array
     {
         $dadosPessoa = [
             'cd_cliente' => $cdCliente,
