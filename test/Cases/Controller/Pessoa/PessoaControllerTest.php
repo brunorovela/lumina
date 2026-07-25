@@ -79,6 +79,43 @@ class PessoaControllerTest extends TestCase
         $buscarDepoisDeExcluir->assertStatus(404);
     }
 
+    public function testPutTrocandoFisicaParaJuridicaApagaOFilhoAntigo()
+    {
+        // CRITICAL Finding 1 (whole-branch review): PUT trocando o tipo pessoa
+        // (física -> jurídica) não podia deixar a linha antiga em unim_pessoa_fisica
+        // órfã (pessoa com fisica E juridica preenchidas ao mesmo tempo).
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Troca Tipo',
+            'ds_login' => 'teste.http.trocatipo',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Troca Tipo Oficial',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $cdPessoa = $criar->json('data.cd_pessoa');
+        $this->assertNotNull($criar->json('data.fisica'));
+
+        $atualizar = $this->put("/pessoas/{$cdPessoa}", [
+            'ds_nome' => 'Http Teste Troca Tipo',
+            'ds_login' => 'teste.http.trocatipo',
+            'sn_pessoa_juridica' => true,
+            'ds_cnpj' => '00000000000191',
+            'ds_nome_fantasia' => 'Http Teste Troca Tipo Fantasia',
+        ], $this->headers());
+
+        $atualizar->assertStatus(200);
+        $this->assertNull($atualizar->json('data.fisica'));
+        $this->assertNotNull($atualizar->json('data.juridica'));
+        $this->assertSame('00000000000191', $atualizar->json('data.juridica.ds_cnpj'));
+
+        $linhaFisicaOrfa = Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->first();
+        $this->assertNull($linhaFisicaOrfa);
+
+        $linhaJuridica = Db::table('unim_pessoa_juridica')->where('cd_pessoa', $cdPessoa)->first();
+        $this->assertNotNull($linhaJuridica);
+    }
+
     public function testListarComFiltroDeNomeEPaginacao()
     {
         $this->json('/pessoas', [

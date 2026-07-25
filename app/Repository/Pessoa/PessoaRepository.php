@@ -53,6 +53,27 @@ class PessoaRepository implements PessoaRepositoryInterface
 
             $pessoa->update($dadosPessoa);
 
+            // Quando quem chamou informa o tipo pessoa (PUT — sempre manda
+            // sn_pessoa_juridica), o filho do tipo que NÃO se aplica mais precisa ser
+            // apagado, senão uma pessoa que trocou de física pra jurídica (ou vice-versa)
+            // fica com as duas linhas filhas preenchidas ao mesmo tempo (dado órfão, num
+            // schema compartilhado com o LMS legado). Isso é seguro mesmo quando o tipo
+            // NÃO mudou: a FK unim_pessoa_fisica/unim_pessoa_juridica -> unim_pessoa é
+            // ON DELETE RESTRICT no sentido pessoa->filho (apagar o pai com filho vivo é
+            // que seria bloqueado); apagar o filho aqui nunca toca o pai.
+            // No PATCH (atualizarParcial) dadosPessoa nunca contém sn_pessoa_juridica, então
+            // este bloco não roda ali — um PATCH que só manda ds_nome não pode apagar o
+            // filho existente só porque não reenviou os campos dele.
+            if (array_key_exists('sn_pessoa_juridica', $dadosPessoa)) {
+                if ($dadosFisica === null) {
+                    UnimPessoaFisica::where('cd_pessoa', $cdPessoa)->delete();
+                }
+
+                if ($dadosJuridica === null) {
+                    UnimPessoaJuridica::where('cd_pessoa', $cdPessoa)->delete();
+                }
+            }
+
             if ($dadosFisica !== null) {
                 UnimPessoaFisica::updateOrCreate(['cd_pessoa' => $cdPessoa], $dadosFisica);
             }
