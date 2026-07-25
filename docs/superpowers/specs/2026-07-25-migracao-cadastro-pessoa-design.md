@@ -69,7 +69,8 @@ Regra dura: Model Eloquent nunca sai de dentro do Repository. Controller/Service
 
 Lumina emite e valida o próprio token (não depende de login externo/gateway).
 
-- **Token**: opaco (`random_bytes` + hex, 32+ bytes), não JWT. Guardado no Redis: chave `session:{token}` → JSON `{cd_pessoa, cd_cliente, cd_perfil, ds_perfil}`, TTL configurável via `.env` (default 8h). Escolhido em vez de JWT stateless porque bate com "controle de sessão via Redis" pedido — permite logout/revogação imediata (JWT puro exigiria blacklist à parte).
+- **Token**: opaco (`random_bytes` + hex, 32+ bytes), não JWT. Guardado no Redis: chave `session:{token}` → JSON `{cd_pessoa, cd_cliente, cd_perfis: [int, ...]}`, TTL configurável via `.env` (default 8h). Escolhido em vez de JWT stateless porque bate com "controle de sessão via Redis" pedido — permite logout/revogação imediata (JWT puro exigiria blacklist à parte).
+- **Múltiplos perfis por pessoa**: achado ao iniciar a implementação (dado real: as pessoas de teste têm 5 perfis simultâneos cada) — o vínculo pessoa↔perfil do legado (`lgin_pessoa_perfil`, chave composta `cd_pessoa+cd_perfil+cd_coligada`, sem `cd_cliente` direto — o escopo por cliente vem de `unim_coligada.cd_cliente`, com `unim_coligada.dt_excluido IS NULL`) permite N perfis por pessoa por cliente, não 1. A sessão guarda a **lista completa** de `cd_perfil` da pessoa pro cliente autenticado, e o ACL é avaliado por **união de permissões**: a ação é permitida se **qualquer** perfil da lista conceder o privilégio.
 - **Login** (`POST /auth/login`): recebe `cd_cliente`, `ds_login`, `ds_senha`. Verifica senha em cascata **compatível com o legado** (`Nucleo/Service/AuthService.php:302-343`): **BCrypt** (`password_verify`) → **MD5** (`md5($senha) === ds_senha`) → **texto puro** (`$senha === ds_senha`, contas residuais). Se bateu por MD5 ou texto puro, reescreve `ds_senha` em BCrypt na hora (upgrade silencioso). Escrita nova (cadastro/troca de senha) sempre BCrypt, nunca gera MD5/texto puro de novo.
 - **Logout** (`POST /auth/logout`): `DEL session:{token}`.
 - **AuthMiddleware**: lê `Authorization: Bearer <token>`, busca `session:{token}` no Redis. Não achou → 401. Achou → seta identidade no contexto da corrotina (`Hyperf\Context\Context::set`), não vaza entre corrotinas.
@@ -78,11 +79,11 @@ Lumina emite e valida o próprio token (não depende de login externo/gateway).
 
 Reaproveita o padrão do legado (`Nucleo/Service/Factory/AclServiceFactory.php` + `PerfilRecursoPrivilegioService.php`), mecanismo via **middleware PSR-15** (não AOP/atributo — mais simples, testável via `HttpTestCase`, idiomático Hyperf).
 
-- Cache Redis `acl:perfil:{cd_perfil}` → JSON `{recurso: [privilégios]}`, TTL 1 dia (mesmo TTL do legado).
+- Cache Redis `acl:perfil:{cd_perfil}` → JSON `{recurso: [privilégios]}`, TTL 1 dia (mesmo TTL do legado) — um cache por perfil individual, não por pessoa (perfis são compartilhados entre pessoas, cachear por perfil evita recomputar a mesma coisa pra cada pessoa que tem aquele perfil).
 - Cache miss → monta do banco (tabela perfil/recurso/privilégio), grava no Redis.
-- `AclService->isAllowed(cd_perfil, resource, privilege)` — consulta o cache montado.
-- `AclService->invalidar(cd_perfil)` → `DEL` da chave. Método pronto desde já pra quando a API de perfil for migrada (fora de escopo agora — só o mecanismo de invalidação fica preparado).
-- `AclMiddleware` roda depois do `AuthMiddleware` na pipeline, lê `resource`/`privilege` exigido da opção de rota (ex: `['acl' => ['resource' => 'pessoa', 'privilege' => 'listar']]`). Não permitido → 403.
+- `AclService->isAllowed(array $cdPerfis, string $resource, string $privilege)` — **união de permissões**: retorna `true` se **qualquer** `cd_perfil` da lista conceder o privilégio (consulta/monta o cache de cada perfil envolvido).
+- `AclService->invalidar(int $cdPerfil)` → `DEL` da chave daquele perfil. Método pronto desde já pra quando a API de perfil for migrada (fora de escopo agora — só o mecanismo de invalidação fica preparado).
+- `AclMiddleware` roda depois do `AuthMiddleware` na pipeline, lê `resource`/`privilege` exigido da opção de rota (ex: `['acl' => ['resource' => 'pessoa', 'privilege' => 'listar']]`), pega a lista de `cd_perfis` da sessão. Não permitido → 403.
 
 ## CRUD de Pessoa
 
