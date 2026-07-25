@@ -49,8 +49,8 @@ services:
     container_name: lumina-docs
     working_dir: /swagger
     restart: unless-stopped
-    depends_on:
-      - lumina
+    # http.json é artefato gerado por build (gen:swagger), não dependência de runtime do lumina —
+    # sem depends_on de propósito: este serviço só lê o arquivo via bind-mount.
     command: open-swagger-ui ./http.json
     ports:
       - "8082:3355" # 8081 já é usado pelo lms-api-doc do legado no mesmo uni_sup_network — conferir antes de subir
