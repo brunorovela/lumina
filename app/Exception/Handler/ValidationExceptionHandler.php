@@ -14,7 +14,6 @@ namespace App\Exception\Handler;
 
 use App\Support\ApiResponse;
 use Hyperf\ExceptionHandler\ExceptionHandler;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Hyperf\Validation\ValidationException;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;
@@ -26,11 +25,7 @@ class ValidationExceptionHandler extends ExceptionHandler
         $this->stopPropagation();
 
         /* @var ValidationException $throwable */
-        return $response
-            ->withStatus(422)
-            ->withBody(new SwooleStream(json_encode(
-                ApiResponse::erro('Dados inválidos.', $throwable->validator->errors()->toArray())
-            )));
+        return ApiResponse::erroHttp($response, 422, 'Dados inválidos.', $throwable->validator->errors()->toArray());
     }
 
     public function isValid(Throwable $throwable): bool

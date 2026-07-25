@@ -15,7 +15,6 @@ namespace App\Exception\Handler;
 use App\Exception\HttpAwareException;
 use App\Support\ApiResponse;
 use Hyperf\ExceptionHandler\ExceptionHandler;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -31,18 +30,18 @@ class AppExceptionHandler extends ExceptionHandler
         $this->stopPropagation();
 
         if ($throwable instanceof HttpAwareException) {
-            return $response
-                ->withStatus($throwable->getStatusCode())
-                ->withBody(new SwooleStream(json_encode(ApiResponse::erro($throwable->getMessage()))));
+            return ApiResponse::erroHttp($response, $throwable->getStatusCode(), $throwable->getMessage());
         }
 
-        $this->logger->error($throwable->getMessage(), ['exception' => $throwable]);
+        $traceId = bin2hex(random_bytes(6));
 
-        return $response
-            ->withStatus(500)
-            ->withBody(new SwooleStream(json_encode(
-                ApiResponse::erro('Erro interno. Tente novamente em instantes.')
-            )));
+        $this->logger->error($throwable->getMessage(), ['exception' => $throwable, 'trace_id' => $traceId]);
+
+        return ApiResponse::erroHttp(
+            $response,
+            500,
+            "Erro interno. Código: {$traceId}. Tente novamente em instantes."
+        );
     }
 
     public function isValid(Throwable $throwable): bool

@@ -15,7 +15,6 @@ namespace App\Middleware;
 use App\Service\Acl\AclService;
 use App\Support\ApiResponse;
 use App\Support\IdentidadeContext;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Hyperf\HttpServer\Router\Dispatched;
 use Psr\Http\Message\ResponseInterface as PsrResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -44,9 +43,7 @@ class AclMiddleware implements MiddlewareInterface
         );
 
         if (! $permitido) {
-            return $this->response
-                ->withStatus(403)
-                ->withBody(new SwooleStream(json_encode(ApiResponse::erro('Sem permissão para esta ação.'))));
+            return ApiResponse::erroHttp($this->response, 403, 'Sem permissão para esta ação.');
         }
 
         return $handler->handle($request);

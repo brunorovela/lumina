@@ -11,8 +11,8 @@ declare(strict_types=1);
  */
 use App\Exception\Handler\AppExceptionHandler;
 use App\Exception\Handler\DatabaseExceptionHandler;
+use App\Exception\Handler\RouteExceptionHandler;
 use App\Exception\Handler\ValidationExceptionHandler;
-use Hyperf\HttpServer\Exception\Handler\HttpExceptionHandler;
 
 /*
  * This file is part of Hyperf.
@@ -27,7 +27,10 @@ return [
         'http' => [
             ValidationExceptionHandler::class,
             DatabaseExceptionHandler::class,
-            HttpExceptionHandler::class,
+            // Substitui Hyperf\HttpServer\Exception\Handler\HttpExceptionHandler (nativo) —
+            // ver App\Exception\Handler\RouteExceptionHandler pro porquê (whole-branch
+            // review, Finding 3: 404/405 nativos saem sem o envelope ApiResponse).
+            RouteExceptionHandler::class,
             AppExceptionHandler::class,
         ],
     ],

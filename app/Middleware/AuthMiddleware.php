@@ -15,7 +15,6 @@ namespace App\Middleware;
 use App\Service\Auth\AuthService;
 use App\Support\ApiResponse;
 use App\Support\IdentidadeContext;
-use Hyperf\HttpMessage\Stream\SwooleStream;
 use Psr\Http\Message\ResponseInterface as PsrResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -39,9 +38,7 @@ class AuthMiddleware implements MiddlewareInterface
         }
 
         if ($identidade === null) {
-            return $this->response
-                ->withStatus(401)
-                ->withBody(new SwooleStream(json_encode(ApiResponse::erro('Não autenticado.'))));
+            return ApiResponse::erroHttp($this->response, 401, 'Não autenticado.');
         }
 
         IdentidadeContext::set($identidade);
