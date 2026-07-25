@@ -74,4 +74,71 @@ class PessoaRepositoryTest extends TestCase
         $this->assertTrue($repository->loginExiste(1, 'teste.repo.duplicado'));
         $this->assertFalse($repository->loginExiste(2, 'teste.repo.duplicado'));
     }
+
+    public function testAtualizarMantemSenhaAtualQuandoNaoInformada()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $pessoa = $repository->criar(
+            [
+                'cd_cliente' => 1,
+                'ds_nome' => 'Atualiza Teste',
+                'ds_login' => 'teste.repo.atualiza',
+                'ds_senha' => 'hash-original',
+                'sn_pessoa_juridica' => false,
+            ],
+            ['ds_nome_oficial' => 'Atualiza Teste Oficial'],
+            null
+        );
+
+        $atualizada = $repository->atualizar(
+            $pessoa->cd_pessoa,
+            1,
+            ['ds_nome' => 'Atualiza Teste Renomeado'],
+            null,
+            null
+        );
+
+        $this->assertSame('Atualiza Teste Renomeado', $atualizada->ds_nome);
+        $this->assertSame('hash-original', $atualizada->ds_senha);
+    }
+
+    public function testListarFiltraPorNomeETipoPessoaEPaginaCertoDentroDoCliente()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $repository->criar(
+            ['cd_cliente' => 1, 'ds_nome' => 'Maria Fisica Teste', 'ds_login' => 'teste.repo.listar1', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['ds_nome_oficial' => 'Maria Fisica Teste'],
+            null
+        );
+        $repository->criar(
+            ['cd_cliente' => 1, 'ds_nome' => 'Empresa Juridica Teste', 'ds_login' => 'teste.repo.listar2', 'ds_senha' => 'x', 'sn_pessoa_juridica' => true],
+            null,
+            ['ds_cnpj' => '00000000000191', 'ds_nome_fantasia' => 'Empresa Juridica Teste']
+        );
+
+        $resultado = $repository->listar(1, ['nome' => 'Teste', 'tipo_pessoa' => 'fisica'], 1, 20);
+
+        $this->assertSame(1, $resultado['total']);
+        $this->assertSame('Maria Fisica Teste', $resultado['itens']->first()->ds_nome);
+    }
+
+    public function testExcluirEhSoftDeleteNaoRemoveLinha()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $pessoa = $repository->criar(
+            ['cd_cliente' => 1, 'ds_nome' => 'Exclui Teste', 'ds_login' => 'teste.repo.excluir', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['ds_nome_oficial' => 'Exclui Teste'],
+            null
+        );
+
+        $this->assertTrue($repository->excluir($pessoa->cd_pessoa, 1));
+        $this->assertNull($repository->buscarPorId($pessoa->cd_pessoa, 1));
+
+        $linhaCrua = Db::table('unim_pessoa')->where('cd_pessoa', $pessoa->cd_pessoa)->first();
+        $this->assertNotNull($linhaCrua);
+        $this->assertNotNull($linhaCrua->dt_excluido);
+    }
 }

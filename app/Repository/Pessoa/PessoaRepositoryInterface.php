@@ -13,12 +13,26 @@ declare(strict_types=1);
 namespace App\Repository\Pessoa;
 
 use App\Model\Pessoa\UnimPessoa;
+use Hyperf\Database\Model\Collection;
 
 interface PessoaRepositoryInterface
 {
     public function criar(array $dadosPessoa, ?array $dadosFisica, ?array $dadosJuridica): UnimPessoa;
 
+    public function atualizar(
+        int $cdPessoa,
+        int $cdCliente,
+        array $dadosPessoa,
+        ?array $dadosFisica,
+        ?array $dadosJuridica
+    ): UnimPessoa;
+
     public function buscarPorId(int $cdPessoa, int $cdCliente): ?UnimPessoa;
+
+    /** @return array{itens: Collection, total: int} */
+    public function listar(int $cdCliente, array $filtros, int $page, int $perPage): array;
+
+    public function excluir(int $cdPessoa, int $cdCliente): bool;
 
     public function loginExiste(int $cdCliente, string $dsLogin, ?int $ignorarCdPessoa = null): bool;
 }
