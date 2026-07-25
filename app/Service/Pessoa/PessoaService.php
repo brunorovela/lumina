@@ -52,14 +52,28 @@ class PessoaService
             $this->garantirLoginDisponivel($cdPessoa, $cdCliente, $dados['ds_login']);
         }
 
+        // PATCH não muda o tipo pessoa (física/jurídica) — precisa saber o tipo REAL já
+        // existente antes de montar os dados parciais. Sem isso, um PATCH com ds_cnpj
+        // numa pessoa física criava uma linha jurídica pra ela (Finding 14, whole-branch
+        // review; mesmo problema de integridade do Critical 1, por outra porta). buscar()
+        // também garante 404 cedo se a pessoa não existir/não for deste cliente.
+        $pessoaAtual = $this->buscar($cdPessoa, $cdCliente);
+
         $dadosPessoa = array_intersect_key($dados, array_flip(['ds_nome', 'ds_login', 'ds_senha']));
 
         if (isset($dadosPessoa['ds_senha'])) {
             $dadosPessoa['ds_senha'] = password_hash($dadosPessoa['ds_senha'], PASSWORD_BCRYPT);
         }
 
-        $dadosFisica = array_intersect_key($dados, array_flip(['ds_nome_oficial', 'ds_cpf']));
-        $dadosJuridica = array_intersect_key($dados, array_flip(['ds_cnpj', 'ds_nome_fantasia']));
+        // Campos do tipo que a pessoa NÃO é são ignorados silenciosamente, mesmo que
+        // venham no payload.
+        $dadosFisica = $pessoaAtual->sn_pessoa_juridica
+            ? []
+            : array_intersect_key($dados, array_flip(['ds_nome_oficial', 'ds_cpf']));
+
+        $dadosJuridica = $pessoaAtual->sn_pessoa_juridica
+            ? array_intersect_key($dados, array_flip(['ds_cnpj', 'ds_nome_fantasia']))
+            : [];
 
         return $this->pessoaRepository->atualizar(
             $cdPessoa,

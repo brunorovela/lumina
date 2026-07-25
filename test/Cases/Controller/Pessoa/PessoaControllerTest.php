@@ -243,6 +243,32 @@ class PessoaControllerTest extends TestCase
         $patch->assertStatus(422);
     }
 
+    public function testPatchComCampoDeTipoErradoIgnoraOCampoENaoCriaFilhoErrado()
+    {
+        // Finding 14 (whole-branch review): PATCH aceitava ds_cnpj numa pessoa física e
+        // criava uma linha em unim_pessoa_juridica pra ela.
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Patch Tipo Errado',
+            'ds_login' => 'teste.http.patchtipoerrado',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Patch Tipo Errado',
+        ], $this->headers());
+
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $patch = $this->patch("/pessoas/{$cdPessoa}", [
+            'ds_cnpj' => '00000000000191',
+            'ds_nome_fantasia' => 'Nao Deveria Existir',
+        ], $this->headers());
+
+        $patch->assertStatus(200);
+        $this->assertNull($patch->json('data.juridica'));
+
+        $linhaJuridica = Db::table('unim_pessoa_juridica')->where('cd_pessoa', $cdPessoa)->first();
+        $this->assertNull($linhaJuridica);
+    }
+
     private function headers(): array
     {
         return ['Authorization' => "Bearer {$this->token}"];

@@ -142,6 +142,41 @@ class PessoaServiceTest extends TestCase
         $this->assertSame($hashOriginal, $atualizada->ds_senha);
     }
 
+    public function testAtualizarParcialIgnoraCampoDoTipoQuePessoaNaoE()
+    {
+        // Finding 14 (whole-branch review): atualizarParcial() montava dadosJuridica sem
+        // checar o sn_pessoa_juridica REAL da pessoa -- um PATCH com ds_cnpj numa pessoa
+        // física criava uma linha jurídica pra ela (mesmo bug de integridade do Critical
+        // 1, por outra porta, só que via PATCH em vez de PUT).
+        $service = $this->getContainer()->get(PessoaService::class);
+
+        $pessoa = $service->criar(1, [
+            'ds_nome' => 'Patch Tipo Errado',
+            'ds_login' => 'teste.service.patchtipoerrado',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Patch Tipo Errado',
+        ]);
+
+        $atualizada = $service->atualizarParcial($pessoa->cd_pessoa, 1, [
+            'ds_cnpj' => '00000000000191',
+            'ds_nome_fantasia' => 'Nao Deveria Existir',
+        ]);
+
+        $this->assertNull($atualizada->juridica);
+
+        $linhaJuridica = Db::table('unim_pessoa_juridica')->where('cd_pessoa', $pessoa->cd_pessoa)->first();
+        $this->assertNull($linhaJuridica);
+    }
+
+    public function testAtualizarParcialPessoaInexistenteLancaExcecao()
+    {
+        $service = $this->getContainer()->get(PessoaService::class);
+
+        $this->expectException(PessoaNaoEncontradaException::class);
+        $service->atualizarParcial(999999, 1, ['ds_nome' => 'Nao Existe']);
+    }
+
     public function testBuscarPessoaInexistenteLancaExcecao()
     {
         $service = $this->getContainer()->get(PessoaService::class);
