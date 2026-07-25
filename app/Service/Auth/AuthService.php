@@ -13,24 +13,20 @@ declare(strict_types=1);
 namespace App\Service\Auth;
 
 use App\Exception\Auth\CredenciaisInvalidasException;
-use Hyperf\DbConnection\Db;
+use App\Repository\Auth\AuthRepositoryInterface;
 use Hyperf\Redis\Redis;
 
 class AuthService
 {
     private const TTL_SESSAO = 8 * 60 * 60;
 
-    public function __construct(private Redis $redis)
+    public function __construct(private Redis $redis, private AuthRepositoryInterface $authRepository)
     {
     }
 
     public function autenticar(int $cdCliente, string $dsLogin, string $dsSenha): string
     {
-        $pessoa = Db::table('unim_pessoa')
-            ->where('cd_cliente', $cdCliente)
-            ->where('ds_login', $dsLogin)
-            ->whereNull('dt_excluido')
-            ->first();
+        $pessoa = $this->authRepository->buscarPessoaAtivaPorLoginECliente($cdCliente, $dsLogin);
 
         if ($pessoa === null) {
             throw new CredenciaisInvalidasException();
@@ -43,7 +39,7 @@ class AuthService
         }
 
         if ($mecanismo !== 'bcrypt') {
-            $this->atualizarHash($pessoa->cd_pessoa, $dsSenha);
+            $this->authRepository->atualizarSenha($pessoa->cd_pessoa, password_hash($dsSenha, PASSWORD_BCRYPT));
         }
 
         $token = bin2hex(random_bytes(32));
@@ -54,7 +50,7 @@ class AuthService
             json_encode([
                 'cd_pessoa' => $pessoa->cd_pessoa,
                 'cd_cliente' => $pessoa->cd_cliente,
-                'cd_perfis' => $this->buscarPerfisDaPessoa($pessoa->cd_pessoa, $pessoa->cd_cliente),
+                'cd_perfis' => $this->authRepository->buscarPerfisDaPessoa($pessoa->cd_pessoa, $pessoa->cd_cliente),
             ])
         );
 
@@ -71,27 +67,6 @@ class AuthService
         $bruto = $this->redis->get($this->chaveSessao($token));
 
         return $bruto === false ? null : json_decode($bruto, true);
-    }
-
-    /**
-     * Uma pessoa pode ter varios perfis simultaneos (confirmado com dado real: contas de
-     * teste no banco de dev tem 5 perfis cada). O vinculo eh lgin_pessoa_perfil -> unim_coligada
-     * (unim_coligada.cd_cliente escopa por cliente; unim_coligada.cd_pessoa NAO filtra aqui —
-     * eh o "dono" da coligada, nao quem tem perfil nela).
-     *
-     * @return int[]
-     */
-    private function buscarPerfisDaPessoa(int $cdPessoa, int $cdCliente): array
-    {
-        return Db::table('lgin_pessoa_perfil as lpp')
-            ->join('unim_coligada as uc', 'uc.cd_coligada', '=', 'lpp.cd_coligada')
-            ->where('lpp.cd_pessoa', $cdPessoa)
-            ->where('uc.cd_cliente', $cdCliente)
-            ->whereNull('uc.dt_excluido')
-            ->pluck('lpp.cd_perfil')
-            ->map(fn ($cdPerfil) => (int) $cdPerfil)
-            ->values()
-            ->all();
     }
 
     /**
@@ -116,13 +91,6 @@ class AuthService
         }
 
         return null;
-    }
-
-    private function atualizarHash(int $cdPessoa, string $senhaInformada): void
-    {
-        Db::table('unim_pessoa')
-            ->where('cd_pessoa', $cdPessoa)
-            ->update(['ds_senha' => password_hash($senhaInformada, PASSWORD_BCRYPT)]);
     }
 
     private function chaveSessao(string $token): string
