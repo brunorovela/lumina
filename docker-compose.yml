@@ -7,8 +7,10 @@ services:
     restart: always
     ports:
       - "9501:9501"
-      # Swagger UI (hyperf/swagger — servidor dedicado, ver config/autoload/swagger.php)
-      - "9500:9500"
+      # Sem mapeamento da porta 9500 (servidor Swagger dedicado do hyperf/swagger) de
+      # propósito: config/autoload/swagger.php mantém esse servidor desligado por padrão
+      # (SWAGGER_ENABLE_SERVER=false) -- quem serve a UI é o container lumina-docs (porta
+      # 8082), lendo o JSON estático gerado por `gen:swagger` direto do disco.
     volumes:
       - .:/opt/www
     environment:
