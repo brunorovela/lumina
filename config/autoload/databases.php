@@ -29,6 +29,11 @@ return [
         'charset' => env('DB_CHARSET', 'utf8mb4'),
         'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
         'prefix' => env('DB_PREFIX', ''),
+        // O schema `lms2` é compartilhado com o LMS legado, que já usa uma tabela
+        // `migrations` própria do Doctrine Migrations (colunas version/executed_at/
+        // execution_time). Para não colidir com ela, o bookkeeping de migrations do
+        // Hyperf usa um nome de tabela dedicado.
+        'migrations' => 'hyperf_migrations',
         'pool' => [
             'min_connections' => 32,   // Mantém mais conexões prontas para uso imediato
             'max_connections' => 512,  // Aumente significativamente para suportar a fila de corrotinas
