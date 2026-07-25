@@ -134,6 +134,25 @@ class PessoaRepositoryTest extends TestCase
         $this->assertSame('Maria Fisica Teste', $resultado['itens']->first()->ds_nome);
     }
 
+    public function testLoginExisteContinuaTrueParaPessoaExcluida()
+    {
+        // Finding 4 (whole-branch review): o índice UNIQUE (cd_cliente, ds_login) do banco
+        // não filtra por dt_excluido, então loginExiste() precisa considerar withTrashed()
+        // -- senão o login de uma pessoa excluída fica "livre" pra checagem de negócio e só
+        // estoura como erro de banco genérico quando alguém tenta recriar.
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $pessoa = $repository->criar(
+            ['cd_cliente' => 1, 'ds_nome' => 'Login Reciclado Teste', 'ds_login' => 'teste.repo.loginreciclado', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['ds_nome_oficial' => 'Login Reciclado Teste'],
+            null
+        );
+
+        $repository->excluir($pessoa->cd_pessoa, 1);
+
+        $this->assertTrue($repository->loginExiste(1, 'teste.repo.loginreciclado'));
+    }
+
     public function testExcluirEhSoftDeleteNaoRemoveLinha()
     {
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);

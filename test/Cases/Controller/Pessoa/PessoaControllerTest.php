@@ -116,6 +116,43 @@ class PessoaControllerTest extends TestCase
         $this->assertNotNull($linhaJuridica);
     }
 
+    public function testCriarExcluirERecriarComMesmoLoginDevolveLoginJaExisteEmVezDeErroGenericoDeBanco()
+    {
+        // Finding 4 (whole-branch review): o índice UNIQUE (cd_cliente, ds_login) do banco
+        // não sabe o que é soft-delete -- sem loginExiste() considerar withTrashed(),
+        // recriar uma pessoa com o login de uma já excluída batia direto no índice do
+        // banco (409 genérico do DatabaseExceptionHandler) em vez de passar pela checagem
+        // de negócio (LoginJaExisteException, mensagem clara).
+        $login = 'teste.http.loginreciclado';
+
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Login Reciclado',
+            'ds_login' => $login,
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Login Reciclado',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $this->delete("/pessoas/{$cdPessoa}", [], $this->headers())->assertStatus(200);
+
+        $recriar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Login Reciclado Duas',
+            'ds_login' => $login,
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Login Reciclado Duas',
+        ], $this->headers());
+
+        $recriar->assertStatus(409);
+        $this->assertSame(
+            'Já existe uma pessoa com esse login para este cliente.',
+            $recriar->json('message')
+        );
+    }
+
     public function testListarComFiltroDeNomeEPaginacao()
     {
         $this->json('/pessoas', [

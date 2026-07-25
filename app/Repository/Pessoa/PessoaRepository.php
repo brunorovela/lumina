@@ -125,7 +125,13 @@ class PessoaRepository implements PessoaRepositoryInterface
 
     public function loginExiste(int $cdCliente, string $dsLogin, ?int $ignorarCdPessoa = null): bool
     {
-        $query = UnimPessoa::where('cd_cliente', $cdCliente)->where('ds_login', $dsLogin);
+        // withTrashed(): o índice UNIQUE (cd_cliente, ds_login) do banco não sabe o que é
+        // soft-delete — ele existe sobre TODAS as linhas, inclusive as com dt_excluido
+        // preenchido. Sem withTrashed() aqui, criar->excluir->recriar com o mesmo login
+        // passava por esta checagem (SoftDeletes filtra dt_excluido por padrão) e só
+        // estourava lá na frente como erro de banco genérico (23000, via
+        // DatabaseExceptionHandler) em vez de LoginJaExisteException com mensagem clara.
+        $query = UnimPessoa::withTrashed()->where('cd_cliente', $cdCliente)->where('ds_login', $dsLogin);
 
         if ($ignorarCdPessoa !== null) {
             $query->where('cd_pessoa', '!=', $ignorarCdPessoa);
