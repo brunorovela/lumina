@@ -12,6 +12,7 @@ declare(strict_types=1);
 use App\Exception\Handler\AppExceptionHandler;
 use App\Exception\Handler\DatabaseExceptionHandler;
 use App\Exception\Handler\ValidationExceptionHandler;
+use Hyperf\HttpServer\Exception\Handler\HttpExceptionHandler;
 
 /*
  * This file is part of Hyperf.
@@ -26,6 +27,7 @@ return [
         'http' => [
             ValidationExceptionHandler::class,
             DatabaseExceptionHandler::class,
+            HttpExceptionHandler::class,
             AppExceptionHandler::class,
         ],
     ],
