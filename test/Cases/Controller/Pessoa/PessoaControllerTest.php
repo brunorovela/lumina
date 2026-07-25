@@ -185,43 +185,26 @@ class PessoaControllerTest extends TestCase
         $this->get('/pessoas')->assertStatus(401);
     }
 
-    public function testSemTokenEComPayloadInvalidoRetornaAtualmente422EmVezDe401()
+    public function testSemTokenEComPayloadInvalidoRetorna401NaoMais422()
     {
-        // LIMITAÇÃO CONHECIDA (Task 14, Fix round 1, Finding 2) — NÃO é o comportamento
-        // desejado, é uma prova/registro do bug atual: ValidationMiddleware (global,
-        // config/autoload/middlewares.php) roda ANTES de AuthMiddleware/AclMiddleware
-        // (por rota), porque ambos entram na mesma lista de middlewares sem nenhuma
-        // ordem declarada e Hyperf\Testing\Http\Client::execute() apenas concatena
-        // (array_merge) global + rota, na ordem em que aparecem — sem chamar
-        // Hyperf\HttpServer\MiddlewareManager::sortMiddlewares(). Um cliente sem token
-        // descobre a forma do contrato de validação (quais campos existem, quais são
-        // obrigatórios) sem nunca ter se autenticado. Não vaza dado, mas inverte
-        // "autenticar antes de processar".
+        // Finding 8 (whole-branch review, revisitando a limitação conhecida da Task 14):
+        // ValidationMiddleware era global (config/autoload/middlewares.php) e rodava ANTES
+        // de AuthMiddleware/AclMiddleware (por rota) -- um cliente sem token descobria a
+        // forma do contrato de validação (quais campos existem, quais são obrigatórios)
+        // sem nunca ter se autenticado.
         //
-        // Existe um mecanismo real e limpo do Hyperf pra consertar isso em produção:
-        // Hyperf\HttpServer\PriorityMiddleware, interpretado por
-        // MiddlewareManager::sortMiddlewares() — e Hyperf\HttpServer\Server::onRequest()
-        // (o servidor Swoole de verdade) CHAMA sortMiddlewares() sempre que a rota tem
-        // middleware próprio, então o fix funcionaria no servidor real. O problema é que
-        // Hyperf\Testing\Http\Client (o cliente HTTP usado por TestCase/MakesHttpRequests,
-        // e portanto por TODOS os testes deste projeto) não chama sortMiddlewares() em
-        // lugar nenhum — só existe outro Client (Hyperf\Testing\Client, classe raramente
-        // usada e não é a que o TestCase importa) que chama. Aplicar PriorityMiddleware
-        // nas rotas faria o comportamento em produção mudar (correto), mas quebraria TODA
-        // a suíte co-phpunit destas rotas com 500 "Invalid middleware, it has to provide
-        // a process() method" — porque o harness passaria o objeto PriorityMiddleware
-        // direto pro dispatcher sem desembrulhar. Not sortable = not testable com as
-        // ferramentas deste projeto; forçar o fix seria trocar uma inversão de ordem
-        // (risco baixo, ninguém lê/escreve sem token) por testes quebrados de verdade.
-        // Documentado como limitação conhecida — ver task-14-report.md, Fix round 1,
-        // Finding 2. Este teste PINA o comportamento atual (não o desejado): se algum dia
-        // isso passar a retornar 401, é sinal de que a limitação foi resolvida de verdade
-        // (por exemplo, se uma versão futura do Hyperf\Testing\Http\Client passar a
-        // respeitar MiddlewareManager::sortMiddlewares()) — nesse caso, atualize esta
-        // asserção para 401 e apague este comentário.
+        // A correção NÃO usa Hyperf\HttpServer\PriorityMiddleware/sortMiddlewares() (a
+        // limitação original apontava, corretamente, que Hyperf\Testing\Http\Client --
+        // usado por todo o harness de teste -- não chama sortMiddlewares(), então
+        // PriorityMiddleware quebraria a suíte). Em vez disso, ValidationMiddleware saiu
+        // do array global e passou a ser declarado no 'middleware' de cada rota (ver
+        // config/routes.php), APÓS AuthMiddleware/AclMiddleware na mesma lista --
+        // RouteCollector::mergeOptions() (array_merge_recursive) preserva essa ordem de
+        // aparição sem precisar de nenhum mecanismo de prioridade, e tanto o servidor real
+        // quanto Hyperf\Testing\Http\Client respeitam a ordem simples de concatenação.
         $criar = $this->json('/pessoas', []);
 
-        $this->assertSame(422, $criar->getStatusCode());
+        $this->assertSame(401, $criar->getStatusCode());
     }
 
     public function testMensagemDeValidacaoVemEmInglesNaoEmChines()
