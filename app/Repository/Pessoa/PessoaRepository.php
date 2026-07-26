@@ -42,9 +42,17 @@ class PessoaRepository implements PessoaRepositoryInterface
         int $cdCliente,
         array $dadosPessoa,
         ?array $dadosFisica,
-        ?array $dadosJuridica
+        ?array $dadosJuridica,
+        bool $ehIsentoDeFisicaJuridica = false
     ): UnimPessoa {
-        return Db::transaction(function () use ($cdPessoa, $cdCliente, $dadosPessoa, $dadosFisica, $dadosJuridica) {
+        return Db::transaction(function () use (
+            $cdPessoa,
+            $cdCliente,
+            $dadosPessoa,
+            $dadosFisica,
+            $dadosJuridica,
+            $ehIsentoDeFisicaJuridica
+        ) {
             $pessoa = UnimPessoa::where('cd_pessoa', $cdPessoa)->where('cd_cliente', $cdCliente)->first();
 
             if ($pessoa === null) {
@@ -54,17 +62,27 @@ class PessoaRepository implements PessoaRepositoryInterface
             $pessoa->update($dadosPessoa);
 
             // Quando quem chamou informa o tipo pessoa (PUT — sempre manda
-            // sn_pessoa_juridica), o filho do tipo que NÃO se aplica mais precisa ser
-            // apagado, senão uma pessoa que trocou de física pra jurídica (ou vice-versa)
-            // fica com as duas linhas filhas preenchidas ao mesmo tempo (dado órfão, num
-            // schema compartilhado com o LMS legado). Isso é seguro mesmo quando o tipo
-            // NÃO mudou: a FK unim_pessoa_fisica/unim_pessoa_juridica -> unim_pessoa é
-            // ON DELETE RESTRICT no sentido pessoa->filho (apagar o pai com filho vivo é
-            // que seria bloqueado); apagar o filho aqui nunca toca o pai.
+            // sn_pessoa_juridica) E a pessoa NÃO é isenta de física/jurídica, o filho do
+            // tipo que NÃO se aplica mais precisa ser apagado, senão uma pessoa que trocou
+            // de física pra jurídica (ou vice-versa) fica com as duas linhas filhas
+            // preenchidas ao mesmo tempo (dado órfão, num schema compartilhado com o LMS
+            // legado). Isso é seguro mesmo quando o tipo NÃO mudou: a FK
+            // unim_pessoa_fisica/unim_pessoa_juridica -> unim_pessoa é ON DELETE RESTRICT
+            // no sentido pessoa->filho (apagar o pai com filho vivo é que seria
+            // bloqueado); apagar o filho aqui nunca toca o pai.
+            //
+            // REGRESSÃO CORRIGIDA (re-review pós-fix do Critical 1): pessoas isentas
+            // (login admin/administrador) sempre têm $dadosFisica E $dadosJuridica null —
+            // não porque o tipo mudou, mas porque a regra de negócio nunca aplica
+            // física/jurídica a elas. Sem o guard $ehIsentoDeFisicaJuridica, um PUT válido
+            // nessas pessoas apagava qualquer fisica/juridica órfã de dado legado
+            // (reproduzido de verdade contra cd_pessoa=1/2, cd_cliente=23). Pessoa isenta
+            // NUNCA tem fisica/juridica mexida aqui, independente do que vier nos arrays.
+            //
             // No PATCH (atualizarParcial) dadosPessoa nunca contém sn_pessoa_juridica, então
             // este bloco não roda ali — um PATCH que só manda ds_nome não pode apagar o
             // filho existente só porque não reenviou os campos dele.
-            if (array_key_exists('sn_pessoa_juridica', $dadosPessoa)) {
+            if (array_key_exists('sn_pessoa_juridica', $dadosPessoa) && ! $ehIsentoDeFisicaJuridica) {
                 if ($dadosFisica === null) {
                     UnimPessoaFisica::where('cd_pessoa', $cdPessoa)->delete();
                 }

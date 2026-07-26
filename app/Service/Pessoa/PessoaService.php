@@ -43,7 +43,23 @@ class PessoaService
 
         [$dadosPessoa, $dadosFisica, $dadosJuridica] = $this->separarDados($cdCliente, $dados);
 
-        return $this->pessoaRepository->atualizar($cdPessoa, $cdCliente, $dadosPessoa, $dadosFisica, $dadosJuridica);
+        // O Repository precisa saber se esta pessoa é isenta de física/jurídica (login
+        // admin/administrador) pra NUNCA apagar fisica/juridica dela — mesmo que
+        // $dadosFisica/$dadosJuridica venham null aqui (o que pra pessoa isenta não
+        // significa "tipo mudou", significa "essa regra nunca se aplicou"). Regressão
+        // real encontrada em re-review: sem esse sinal, um PUT válido numa pessoa isenta
+        // que tivesse fisica/juridica órfã por dado legado (cd_pessoa=1/2, cd_cliente=23,
+        // confirmado contra o banco real) apagava essa linha.
+        $ehIsentoDeFisicaJuridica = $this->ehIsentoDeFisicaJuridica($dados['ds_login']);
+
+        return $this->pessoaRepository->atualizar(
+            $cdPessoa,
+            $cdCliente,
+            $dadosPessoa,
+            $dadosFisica,
+            $dadosJuridica,
+            $ehIsentoDeFisicaJuridica
+        );
     }
 
     public function atualizarParcial(int $cdPessoa, int $cdCliente, array $dados): UnimPessoa
@@ -125,6 +141,11 @@ class PessoaService
         }
     }
 
+    private function ehIsentoDeFisicaJuridica(string $dsLogin): bool
+    {
+        return in_array(strtolower($dsLogin), self::LOGINS_ISENTOS_DE_FISICA_JURIDICA, true);
+    }
+
     private function separarDados(int $cdCliente, array $dados): array
     {
         $dadosPessoa = [
@@ -138,9 +159,7 @@ class PessoaService
             $dadosPessoa['ds_senha'] = password_hash($dados['ds_senha'], PASSWORD_BCRYPT);
         }
 
-        $ehIsentoDeFisicaJuridica = in_array(strtolower($dados['ds_login']), self::LOGINS_ISENTOS_DE_FISICA_JURIDICA, true);
-
-        if ($ehIsentoDeFisicaJuridica) {
+        if ($this->ehIsentoDeFisicaJuridica($dados['ds_login'])) {
             return [$dadosPessoa, null, null];
         }
 

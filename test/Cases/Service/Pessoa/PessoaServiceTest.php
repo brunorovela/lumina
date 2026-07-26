@@ -119,6 +119,70 @@ class PessoaServiceTest extends TestCase
         }
     }
 
+    /**
+     * Regressão encontrada em re-review pós-fix do Critical 1 (PUT trocando tipo pessoa):
+     * o delete de filho órfão que consertou o Critical 1 rodava sempre que
+     * $dadosFisica/$dadosJuridica vinham null, mas pessoas ISENTAS (login
+     * admin/administrador) SEMPRE mandam os dois null -- não é "tipo mudou", é a regra de
+     * negócio de sempre. Sem o guard, um PUT válido nessas pessoas apagava qualquer
+     * fisica/juridica que existisse por dado legado (reproduzido de verdade contra
+     * cd_pessoa=1/2, cd_cliente=23 -- não tocados por este teste, que usa cd_cliente=1 e
+     * confere antes que não existe conta real, mesmo padrão de
+     * testCriarComLoginAdminNaoExigeFisicaOuJuridica acima).
+     *
+     * Como o fluxo normal da aplicação NUNCA cria fisica/juridica pra pessoa isenta, a
+     * única forma de ter esse cenário é simulando o dado legado: insere a linha órfã
+     * direto no banco depois de criar a pessoa isenta.
+     */
+    public function testAtualizarPessoaAdminComFisicaOrfaDeDadoLegadoNaoApagaAFisica()
+    {
+        $service = $this->getContainer()->get(PessoaService::class);
+
+        $existeContaReal = Db::table('unim_pessoa')
+            ->where('cd_cliente', 1)
+            ->where('ds_login', 'administrador')
+            ->exists();
+
+        if ($existeContaReal) {
+            $this->markTestSkipped('Ja existe uma conta "administrador" real para cd_cliente=1 nesta base; teste evitado para nao conflitar com dado real.');
+        }
+
+        $cdPessoa = null;
+
+        try {
+            $pessoa = $service->criar(1, [
+                'ds_nome' => 'Administrador Com Fisica Orfa',
+                'ds_login' => 'administrador',
+                'ds_senha' => '123456',
+                'sn_pessoa_juridica' => false,
+            ]);
+            $cdPessoa = $pessoa->cd_pessoa;
+            $this->assertNull($pessoa->fisica);
+
+            // Simula dado legado: linha órfã em unim_pessoa_fisica pra uma pessoa isenta.
+            Db::table('unim_pessoa_fisica')->insert([
+                'cd_pessoa' => $cdPessoa,
+                'ds_nome_oficial' => 'Fisica Orfa De Dado Legado',
+            ]);
+
+            $atualizada = $service->atualizar($cdPessoa, 1, [
+                'ds_nome' => 'Administrador Com Fisica Orfa Renomeado',
+                'ds_login' => 'administrador',
+                'sn_pessoa_juridica' => false,
+            ]);
+
+            $this->assertSame('Administrador Com Fisica Orfa Renomeado', $atualizada->ds_nome);
+
+            $linhaFisica = Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->first();
+            $this->assertNotNull($linhaFisica, 'PUT valido numa pessoa isenta NAO pode apagar fisica orfa de dado legado.');
+        } finally {
+            if ($cdPessoa !== null) {
+                Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->delete();
+                Db::table('unim_pessoa')->where('cd_pessoa', $cdPessoa)->delete();
+            }
+        }
+    }
+
     public function testAtualizarSemSenhaMantemSenhaAtual()
     {
         $service = $this->getContainer()->get(PessoaService::class);

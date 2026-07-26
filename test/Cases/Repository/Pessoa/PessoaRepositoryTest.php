@@ -113,6 +113,48 @@ class PessoaRepositoryTest extends TestCase
         $repository->atualizar(999999, 1, ['ds_nome' => 'Nao Existe'], null, null);
     }
 
+    public function testAtualizarComEhIsentoDeFisicaJuridicaNuncaApagaFilhoOrfao()
+    {
+        // Regressão (re-review pós-fix do Critical 1): o delete de filho órfão rodava
+        // sempre que $dadosFisica/$dadosJuridica vinham null junto de sn_pessoa_juridica,
+        // mas pessoas isentas (login admin/administrador) SEMPRE mandam os dois null --
+        // não porque o tipo mudou, mas porque a regra de negócio nunca aplica
+        // física/jurídica a elas. Sem o guard $ehIsentoDeFisicaJuridica, um PUT válido
+        // numa pessoa isenta com fisica/juridica órfã de dado legado apagava essa linha
+        // (reproduzido de verdade contra cd_pessoa=1/2, cd_cliente=23, fora deste teste).
+        // Aqui simulamos o mesmo cenário com dado de teste: uma pessoa "isenta" (no
+        // sentido do parâmetro, independente do login) com uma linha órfã em
+        // unim_pessoa_juridica inserida direto no banco (só existiria por dado legado --
+        // o fluxo normal da aplicação nunca cria filho pra pessoa isenta).
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $pessoa = $repository->criar(
+            ['cd_cliente' => 1, 'ds_nome' => 'Isento Teste', 'ds_login' => 'teste.repo.isento', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            null,
+            null
+        );
+
+        Db::table('unim_pessoa_juridica')->insert([
+            'cd_pessoa' => $pessoa->cd_pessoa,
+            'ds_cnpj' => '00000000000191',
+            'ds_nome_fantasia' => 'Fantasia Orfa De Dado Legado',
+        ]);
+
+        $atualizada = $repository->atualizar(
+            $pessoa->cd_pessoa,
+            1,
+            ['ds_nome' => 'Isento Teste Renomeado', 'sn_pessoa_juridica' => false],
+            null,
+            null,
+            ehIsentoDeFisicaJuridica: true
+        );
+
+        $this->assertSame('Isento Teste Renomeado', $atualizada->ds_nome);
+
+        $linhaJuridica = Db::table('unim_pessoa_juridica')->where('cd_pessoa', $pessoa->cd_pessoa)->first();
+        $this->assertNotNull($linhaJuridica, 'PUT valido numa pessoa isenta NAO pode apagar juridica orfa de dado legado.');
+    }
+
     public function testListarFiltraPorNomeETipoPessoaEPaginaCertoDentroDoCliente()
     {
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
