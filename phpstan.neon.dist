@@ -1,0 +1,13 @@
+# Este é o template versionado. phpstan.neon (sem .dist) é gitignored e local a cada
+# checkout -- copie antes de rodar `composer analyse`:
+#
+#     cp phpstan.neon.dist phpstan.neon
+#
+# (Finding 7, whole-branch review: sem este .dist, um clone limpo não tinha como
+# rodar `composer test`, já que phpstan.neon nunca foi commitado em formato nenhum.)
+parameters:
+    level: 9
+    paths:
+        - app
+    bootstrapFiles:
+        - phpstan-bootstrap.php

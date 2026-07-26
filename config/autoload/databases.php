@@ -29,6 +29,20 @@ return [
         'charset' => env('DB_CHARSET', 'utf8mb4'),
         'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
         'prefix' => env('DB_PREFIX', ''),
+        // O schema `lms2` é compartilhado com o LMS legado, que já usa uma tabela
+        // `migrations` própria do Doctrine Migrations (colunas version/executed_at/
+        // execution_time). Para não colidir com ela, o bookkeeping de migrations do
+        // Hyperf usa um nome de tabela dedicado.
+        'migrations' => 'hyperf_migrations',
+        // Deliberadamente SEM a chave 'timezone' aqui (Hyperf\Database\Connectors\
+        // MySqlConnector::setTimezone() faria `SET time_zone=...` na sessão): isso só
+        // afetaria conversão de colunas TIMESTAMP e o valor de NOW()/CURDATE() do lado
+        // do servidor. As colunas de data deste schema (dt_excluido, dt_cadastro,
+        // dt_base, ...) são DATETIME — valor literal, sem conversão nenhuma — então o
+        // que importa é o timezone do PROCESSO PHP (Carbon::now() sem timezone
+        // explícita usa date_default_timezone_get()), ajustado em bin/hyperf.php e
+        // test/bootstrap.php pra America/Sao_Paulo (mesmo fuso do servidor MySQL,
+        // @@time_zone=SYSTEM). Ver Finding 12, whole-branch review.
         'pool' => [
             'min_connections' => 32,   // Mantém mais conexões prontas para uso imediato
             'max_connections' => 512,  // Aumente significativamente para suportar a fila de corrotinas

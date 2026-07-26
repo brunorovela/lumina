@@ -17,7 +17,18 @@ ini_set('display_errors', 'on');
 ini_set('display_startup_errors', 'on');
 
 error_reporting(E_ALL);
-date_default_timezone_set('Asia/Shanghai');
+// PHP roda em UTC por padrão (date.timezone=UTC no php.ini da imagem), mas o MySQL
+// (mysql_84) roda com @@time_zone=SYSTEM = America/Sao_Paulo e as colunas de data do
+// schema (dt_excluido, dt_cadastro, dt_base, ...) são DATETIME (não TIMESTAMP) — valor
+// literal, sem conversão de timezone na leitura/escrita. Carbon::now() (usado por
+// SoftDeletes::runSoftDelete() via Model::freshTimestamp()) sem timezone explícita lê
+// date_default_timezone_get(): em UTC, soft-delete gravava dt_excluido 3h no futuro em
+// relação ao resto da tabela (Finding 12, whole-branch review). A chave 'timezone' de
+// config/autoload/databases.php (Hyperf\Database\Connectors\MySqlConnector::setTimezone(),
+// que faz `SET time_zone=...` na sessão) NÃO resolve isso: só afeta conversão de colunas
+// TIMESTAMP e o valor de NOW()/CURDATE() do lado do servidor — não o literal DATETIME que
+// o PHP já monta e envia. Por isso o fix é mesmo o timezone do processo PHP.
+date_default_timezone_set('America/Sao_Paulo');
 
 ! defined('BASE_PATH') && define('BASE_PATH', dirname(__DIR__, 1));
 

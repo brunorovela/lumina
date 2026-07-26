@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Este é o template versionado. phpunit.xml (sem .dist) é gitignored e local a cada
+    checkout. Copie antes de rodar `composer test` / `composer php-unit`:
+
+        cp phpunit.xml.dist phpunit.xml
+
+    (Finding 7, whole-branch review: sem este .dist, um clone limpo não tinha como
+    rodar `composer test`, já que phpunit.xml nunca foi commitado em formato nenhum.)
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="./vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache">
+    <testsuites>
+        <testsuite name="Hyperf">
+            <directory suffix="Test.php">./test/Cases</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

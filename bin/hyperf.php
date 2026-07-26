@@ -20,6 +20,12 @@ ini_set('display_startup_errors', 'on');
 ini_set('memory_limit', '1G');
 
 error_reporting(E_ALL);
+// Ver test/bootstrap.php pro porquê (Finding 12, whole-branch review): PHP roda em UTC
+// por padrão, MySQL (mysql_84) roda em America/Sao_Paulo, e as colunas de data do schema
+// são DATETIME (literal, sem conversão de timezone) — sem isso, todo timestamp gerado em
+// PHP (soft-delete, dt_cadastro, dt_base, ...) sai 3h no futuro em relação ao resto da
+// tabela.
+date_default_timezone_set('America/Sao_Paulo');
 
 ! defined('BASE_PATH') && define('BASE_PATH', dirname(__DIR__, 1));
 

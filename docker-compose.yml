@@ -7,8 +7,10 @@ services:
     restart: always
     ports:
       - "9501:9501"
-      # Swagger UI (hyperf/swagger — servidor dedicado, ver config/autoload/swagger.php)
-      - "9500:9500"
+      # Sem mapeamento da porta 9500 (servidor Swagger dedicado do hyperf/swagger) de
+      # propósito: config/autoload/swagger.php mantém esse servidor desligado por padrão
+      # (SWAGGER_ENABLE_SERVER=false) -- quem serve a UI é o container lumina-docs (porta
+      # 8082), lendo o JSON estático gerado por `gen:swagger` direto do disco.
     volumes:
       - .:/opt/www
     environment:
@@ -42,6 +44,26 @@ services:
   #   environment:
   #     RABBITMQ_DEFAULT_USER: guest
   #     RABBITMQ_DEFAULT_PASS: guest
+
+  # Documentação (Swagger UI) do http.json gerado em storage/swagger
+  lumina-docs:
+    image: techsuperior/web-swagger
+    container_name: lumina-docs
+    working_dir: /swagger
+    restart: unless-stopped
+    # http.json é artefato gerado por build (gen:swagger), não dependência de runtime do lumina —
+    # sem depends_on de propósito: este serviço só lê o arquivo via bind-mount.
+    command: open-swagger-ui ./http.json
+    ports:
+      - "8082:3355" # 8081 já é usado pelo lms-api-doc do legado no mesmo uni_sup_network — conferir antes de subir
+    volumes:
+      - ./storage/swagger:/swagger
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+        reservations:
+          memory: 32M
 
 networks:
 

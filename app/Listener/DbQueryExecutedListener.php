@@ -20,6 +20,8 @@ use Hyperf\Logger\LoggerFactory;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 
+use function Hyperf\Support\env;
+
 #[Listener]
 class DbQueryExecutedListener implements ListenerInterface
 {
@@ -45,6 +47,15 @@ class DbQueryExecutedListener implements ListenerInterface
      */
     public function process(object $event): void
     {
+        // LGPD: este log interpola os bindings direto no SQL -- inclui hash bcrypt de
+        // senha e PII (CPF/CNPJ/nome/login) em texto puro, sempre no nível DEBUG. Não
+        // existe motivo pra isso rodar em produção; risco fica restrito a dev/staging,
+        // onde o dado real de LGPD não deveria estar de qualquer forma (Finding 11,
+        // whole-branch review).
+        if (env('APP_ENV') === 'production') {
+            return;
+        }
+
         if ($event instanceof QueryExecuted) {
             $sql = $event->sql;
             if (! Arr::isAssoc($event->bindings)) {

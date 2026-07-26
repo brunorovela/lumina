@@ -18,7 +18,10 @@ Spec completo: `docs/superpowers/specs/2026-07-25-migracao-cadastro-pessoa-desig
 - Testes rodam via `composer php-unit` (= `co-phpunit --prepend test/bootstrap.php`). Base de teste: `Hyperf\Testing\TestCase` (não a `HyperfTest\HttpTestCase` customizada — é a que `test/Cases/ExampleTest.php` já usa e comprovadamente funciona).
 - Nenhum Model Eloquent pode ser usado fora de `app/Repository/**` — Controller/Service só conhecem interfaces de Repository.
 - `cd_cliente` do usuário autenticado nunca vem de payload/query — sempre do contexto da corrotina (`App\Support\IdentidadeContext`, criado na Task 8).
-- Mesmo banco/tabelas do legado (`unim_pessoa`, `unim_pessoa_fisica`, `unim_pessoa_juridica`, `lgin_perfil`, `ulms_recurso`, `ulms_privilegio`, `ulms_recurso_privilegio`, `lgin_perfil_recurso_privilegio`) — não criar tabela nova exceto a coluna `dt_excluido` em `unim_pessoa` (Task 4).
+- Mesmo banco/tabelas do legado (`unim_pessoa`, `unim_pessoa_fisica`, `unim_pessoa_juridica`, `lgin_perfil`, `ulms_recurso`, `ulms_privilegio`, `ulms_recurso_privilegio`, `lgin_perfil_recurso_privilegio`, `lgin_pessoa_perfil`, `unim_coligada`) — não criar tabela nova exceto a coluna `dt_excluido` em `unim_pessoa` (Task 4).
+- **FK reais são aplicadas pelo MySQL** (InnoDB, não é decoração) — confirmado empiricamente antes de escrever este plano. `unim_pessoa.cd_cliente` exige `saas_cliente.cd_cliente` existente; `unim_coligada.cd_idioma` exige `saas_idioma.cd_idioma` existente. Fixtures já criadas no banco de dev (`lms2`) pra desbloquear os testes deste plano: **`saas_cliente.cd_cliente = 1`** (`ds_cliente = 'Cliente Fixture Testes'`) e o **`saas_idioma.cd_idioma = 27`** já existente no seed real (único idioma cadastrado). Todo teste que insere `unim_pessoa`/`unim_coligada` usa esses dois valores — não inventar outro `cd_cliente`/`cd_idioma` sem confirmar que existe.
+- **Bookkeeping de migration isolado do legado**: o schema `lms2` já tinha uma tabela `migrations` própria do Doctrine Migrations do LMS legado (colunas `version`/`executed_at`/`execution_time`), incompatível com o formato que `hyperf/database` espera (`migration`/`batch`). Achado durante a Task 4, resolvido configurando `'migrations' => 'hyperf_migrations'` em `config/autoload/databases.php` (chave real, lida por `Hyperf\DbConnection\DatabaseMigrationRepositoryFactory`) — tabela nova e isolada, sem tocar na `migrations` legada. Confirmado no banco: `migrations` (Doctrine, 29 linhas) intacta, `hyperf_migrations` criada separada. Toda migration futura deste plano usa esse bookkeeping isolado — não reverter essa config.
+- Pessoas reais de seed (`cd_pessoa` 1 e 2, logins `admin`/`administrador`, `cd_cliente=23`) já existem no banco de dev — não apagar, não usar `cd_cliente=23` nos testes novos (fica reservado pra esses dados de seed; testes usam o fixture `cd_cliente=1`).
 
 ---
 
@@ -1169,10 +1172,10 @@ git commit -m "feat: adiciona atualizar, listar e excluir (soft-delete) no Pesso
 ```php
 final class IdentidadeContext
 {
-    public static function set(array $identidade): void; // ['cd_pessoa'=>int,'cd_cliente'=>int,'cd_perfil'=>int,'ds_perfil'=>string]
+    public static function set(array $identidade): void; // ['cd_pessoa'=>int,'cd_cliente'=>int,'cd_perfis'=>int[]]
     public static function get(): ?array;
     public static function cdCliente(): int;
-    public static function cdPerfil(): int;
+    public static function cdPerfis(): array; // lista de cd_perfil — pessoa pode ter varios simultaneos (dado real confirmado)
     public static function cdPessoa(): int;
 }
 
@@ -1215,9 +1218,9 @@ final class IdentidadeContext
         return (int) self::get()['cd_cliente'];
     }
 
-    public static function cdPerfil(): int
+    public static function cdPerfis(): array
     {
-        return (int) self::get()['cd_perfil'];
+        return array_map('intval', self::get()['cd_perfis'] ?? []);
     }
 
     public static function cdPessoa(): int
@@ -1249,18 +1252,36 @@ class AuthServiceTest extends TestCase
 {
     protected function tearDown(): void
     {
+        Db::table('lgin_pessoa_perfil')->whereIn('cd_pessoa', function ($query) {
+            $query->select('cd_pessoa')->from('unim_pessoa')->where('ds_login', 'like', 'teste.auth.%');
+        })->delete();
+        Db::table('unim_coligada')->whereIn('cd_pessoa', function ($query) {
+            $query->select('cd_pessoa')->from('unim_pessoa')->where('ds_login', 'like', 'teste.auth.%');
+        })->delete();
         Db::table('unim_pessoa')->where('ds_login', 'like', 'teste.auth.%')->delete();
         parent::tearDown();
     }
 
-    public function testAutenticaComSenhaBcryptEGeraToken()
+    public function testAutenticaComSenhaBcryptEGeraTokenComListaDePerfis()
     {
+        // fixture cd_cliente=1 e cd_idioma=27 ja existem no banco de dev (ver Global Constraints)
         $cdPessoa = Db::table('unim_pessoa')->insertGetId([
             'cd_cliente' => 1,
             'ds_nome' => 'Auth Bcrypt Teste',
             'ds_login' => 'teste.auth.bcrypt',
             'ds_senha' => password_hash('minhasenha', PASSWORD_BCRYPT),
             'sn_pessoa_juridica' => 0,
+        ]);
+
+        $cdColigada = Db::table('unim_coligada')->insertGetId([
+            'cd_pessoa' => $cdPessoa,
+            'cd_cliente' => 1,
+            'cd_idioma' => 27,
+        ]);
+
+        Db::table('lgin_pessoa_perfil')->insert([
+            ['cd_pessoa' => $cdPessoa, 'cd_perfil' => 1, 'cd_coligada' => $cdColigada],
+            ['cd_pessoa' => $cdPessoa, 'cd_perfil' => 2, 'cd_coligada' => $cdColigada],
         ]);
 
         $authService = $this->getContainer()->get(AuthService::class);
@@ -1270,9 +1291,27 @@ class AuthServiceTest extends TestCase
 
         $identidade = $authService->identidadePorToken($token);
         $this->assertSame($cdPessoa, $identidade['cd_pessoa']);
+        $this->assertSame([1, 2], $identidade['cd_perfis']);
 
         $authService->logout($token);
         $this->assertNull($authService->identidadePorToken($token));
+    }
+
+    public function testAutenticaSemVinculoDePerfilRetornaListaVazia()
+    {
+        Db::table('unim_pessoa')->insert([
+            'cd_cliente' => 1,
+            'ds_nome' => 'Auth Sem Perfil Teste',
+            'ds_login' => 'teste.auth.semperfil',
+            'ds_senha' => password_hash('minhasenha', PASSWORD_BCRYPT),
+            'sn_pessoa_juridica' => 0,
+        ]);
+
+        $authService = $this->getContainer()->get(AuthService::class);
+        $token = $authService->autenticar(1, 'teste.auth.semperfil', 'minhasenha');
+
+        $identidade = $authService->identidadePorToken($token);
+        $this->assertSame([], $identidade['cd_perfis']);
     }
 
     public function testAutenticaComSenhaMd5EFazUpgradeSilenciosoPraBcrypt()
@@ -1391,12 +1430,32 @@ class AuthService
             json_encode([
                 'cd_pessoa' => $pessoa->cd_pessoa,
                 'cd_cliente' => $pessoa->cd_cliente,
-                'cd_perfil' => (int) ($pessoa->cd_perfil ?? 0),
-                'ds_perfil' => $pessoa->ds_perfil ?? null,
+                'cd_perfis' => $this->buscarPerfisDaPessoa($pessoa->cd_pessoa, $pessoa->cd_cliente),
             ])
         );
 
         return $token;
+    }
+
+    /**
+     * Uma pessoa pode ter varios perfis simultaneos (confirmado com dado real: contas de
+     * teste no banco de dev tem 5 perfis cada). O vinculo eh lgin_pessoa_perfil -> unim_coligada
+     * (unim_coligada.cd_cliente escopa por cliente; unim_coligada.cd_pessoa NAO filtra aqui —
+     * eh o "dono" da coligada, nao quem tem perfil nela).
+     *
+     * @return int[]
+     */
+    private function buscarPerfisDaPessoa(int $cdPessoa, int $cdCliente): array
+    {
+        return Db::table('lgin_pessoa_perfil as lpp')
+            ->join('unim_coligada as uc', 'uc.cd_coligada', '=', 'lpp.cd_coligada')
+            ->where('lpp.cd_pessoa', $cdPessoa)
+            ->where('uc.cd_cliente', $cdCliente)
+            ->whereNull('uc.dt_excluido')
+            ->pluck('lpp.cd_perfil')
+            ->map(fn ($cdPerfil) => (int) $cdPerfil)
+            ->values()
+            ->all();
     }
 
     public function logout(string $token): void
@@ -1442,7 +1501,7 @@ class AuthService
 }
 ```
 
-> Nota: `unim_pessoa` não tem coluna `cd_perfil`/`ds_perfil` própria (confirmado no schema) — o perfil do usuário vem de `lgin_perfil` associado ao cliente/pessoa. Nesta task o valor fica como placeholder `0`/`null` vindo de colunas inexistentes (`$pessoa->cd_perfil ?? 0`, sempre cai no `?? 0`/`?? null` hoje). **Isso precisa ser resolvido antes da Task 10 (ACL)** — adicionar como primeiro passo da Task 10 a query real que descobre o `cd_perfil` da pessoa autenticada (provavelmente via tabela de associação pessoa↔perfil que ainda não foi mapeada neste plano; investigar `lgin_perfil`/tabela de vínculo antes de escrever o middleware de ACL).
+> Nota: `unim_pessoa` não tem coluna de perfil própria — resolvido acima via `lgin_pessoa_perfil` + `unim_coligada` (achado e validado contra dado real do banco de dev antes de escrever este plano). `AuthServiceTest` cria as três linhas (pessoa, coligada, vínculo de perfil) via fixture `cd_cliente=1`/`cd_idioma=27` (ver Global Constraints — ambos precisam existir por FK real do MySQL, `saas_cliente`/`saas_idioma`).
 
 - [ ] **Step 6: Rodar e confirmar que passa**
 
@@ -1678,9 +1737,9 @@ git commit -m "feat: adiciona rotas de login/logout e AuthMiddleware"
 
 ---
 
-## Task 10: Descobrir o vínculo pessoa↔perfil e implementar `AclRepository`
+## Task 10: `AclRepository` — permissões por perfil
 
-O `AuthService` (Task 8) deixou `cd_perfil` como placeholder. Antes de implementar o `AclService`, é preciso achar a tabela real de vínculo pessoa↔perfil no legado (não investigada no brainstorming — `lgin_perfil` tem `cd_cliente`/`cd_grupo`, mas não uma pessoa específica).
+Vínculo pessoa↔perfil (`lgin_pessoa_perfil` + `unim_coligada`) já foi resolvido e usado no `AuthService` (Task 8). Esta task só cobre a leitura de permissões por perfil, consumida pelo `AclService` (Task 11).
 
 **Files:**
 - Create: `app/Repository/Acl/AclRepository.php`
@@ -1691,23 +1750,12 @@ O `AuthService` (Task 8) deixou `cd_perfil` como placeholder. Antes de implement
 ```php
 class AclRepository
 {
-    public function buscarCdPerfilDaPessoa(int $cdPessoa, int $cdCliente): ?int;
     public function buscarPermissoesPorPerfil(int $cdPerfil): array; // ['pessoa' => ['listar', 'criar', ...], ...]
 }
 ```
-Consumido por `AclService` (Task 11) e por um ajuste retroativo no `AuthService` (Step 5 desta task).
+Consumido por `AclService` (Task 11).
 
-- [ ] **Step 1: Investigar a tabela de vínculo pessoa↔perfil no legado**
-
-```bash
-grep -rln "cd_pessoa" /home/brovela/uni-docker-hub/apps/lms/module/Login/config/doctrine /home/brovela/uni-docker-hub/apps/lms/module/Unimestre/config/doctrine 2>/dev/null
-```
-
-Ler o(s) arquivo(s) `.dcm.xml` encontrado(s) que ligam `cd_pessoa` a `cd_perfil` (provável candidato: uma entidade tipo `UnimPessoaPerfil` ou similar em `module/Unimestre` — **não assumir o nome, confirmar pelo grep**). Anotar tabela e colunas reais antes do Step 2.
-
-- [ ] **Step 2: Escrever o teste do `AclRepository` usando a tabela real encontrada no Step 1**
-
-(Esqueleto — substituir `unim_pessoa_perfil`/nomes de coluna pelos confirmados no Step 1 antes de rodar)
+- [ ] **Step 1: Escrever o teste do `AclRepository` (usa dado real do seed — `cd_perfil=1` já tem grants em `lgin_perfil_recurso_privilegio`, ver Global Constraints)**
 
 ```php
 <?php
@@ -1729,11 +1777,9 @@ class AclRepositoryTest extends TestCase
     {
         $repository = $this->getContainer()->get(AclRepository::class);
 
-        // usar um cd_perfil que já tenha grants de verdade no banco de teste/dev
-        // (consultar lgin_perfil_recurso_privilegio manualmente pra achar um cd_perfil real antes de fixar aqui)
-        $permissoes = $repository->buscarPermissoesPorPerfil(/* cd_perfil real */ 1);
+        $permissoes = $repository->buscarPermissoesPorPerfil(1);
 
-        $this->assertIsArray($permissoes);
+        $this->assertNotEmpty($permissoes);
 
         foreach ($permissoes as $recurso => $privilegios) {
             $this->assertIsString($recurso);
@@ -1743,12 +1789,12 @@ class AclRepositoryTest extends TestCase
 }
 ```
 
-- [ ] **Step 3: Rodar e confirmar que falha**
+- [ ] **Step 2: Rodar e confirmar que falha**
 
 Run: `composer php-unit -- --filter AclRepositoryTest`
 Expected: FAIL — `App\Repository\Acl\AclRepository` não existe.
 
-- [ ] **Step 4: Implementar `AclRepository`**
+- [ ] **Step 3: Implementar `AclRepository`**
 
 ```php
 <?php
@@ -1761,17 +1807,6 @@ use Hyperf\DbConnection\Db;
 
 class AclRepository
 {
-    public function buscarCdPerfilDaPessoa(int $cdPessoa, int $cdCliente): ?int
-    {
-        // TODO confirmar tabela/colunas reais no Step 1 desta task e substituir a query abaixo
-        $cdPerfil = Db::table('unim_pessoa_perfil')
-            ->where('cd_pessoa', $cdPessoa)
-            ->where('cd_cliente', $cdCliente)
-            ->value('cd_perfil');
-
-        return $cdPerfil === null ? null : (int) $cdPerfil;
-    }
-
     public function buscarPermissoesPorPerfil(int $cdPerfil): array
     {
         $linhas = Db::table('lgin_perfil_recurso_privilegio as lprp')
@@ -1793,27 +1828,16 @@ class AclRepository
 }
 ```
 
-> **Atenção:** o método `buscarCdPerfilDaPessoa` tem um `TODO` proposital — é o único ponto do plano com placeholder, porque a tabela real não foi identificada durante o brainstorming (achado só agora, na escrita do plano). **Não prosseguir pra Task 11 sem resolver o Step 1 e remover o TODO** — se a tabela real tiver nome/colunas diferentes de `unim_pessoa_perfil`/`cd_pessoa`/`cd_cliente`/`cd_perfil`, ajustar a query e os testes antes de continuar.
-
-- [ ] **Step 5: Rodar e confirmar que passa (após resolver o TODO do Step 4)**
+- [ ] **Step 4: Rodar e confirmar que passa**
 
 Run: `composer php-unit -- --filter AclRepositoryTest`
 Expected: PASS
 
-- [ ] **Step 6: Atualizar `AuthService::autenticar` (Task 8) pra usar `AclRepository::buscarCdPerfilDaPessoa` no lugar do placeholder `$pessoa->cd_perfil ?? 0`**
-
-```php
-// em App\Service\Auth\AuthService, injetar AclRepository no construtor e trocar:
-'cd_perfil' => $this->aclRepository->buscarCdPerfilDaPessoa($pessoa->cd_pessoa, $pessoa->cd_cliente) ?? 0,
-```
-
-Rodar `composer php-unit -- --filter AuthServiceTest` de novo pra confirmar que não quebrou.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add app/Repository/Acl app/Service/Auth/AuthService.php test/Cases/Repository/Acl
-git commit -m "feat: adiciona AclRepository e resolve cd_perfil real no AuthService"
+git add app/Repository/Acl test/Cases/Repository/Acl
+git commit -m "feat: adiciona AclRepository (permissoes por perfil)"
 ```
 
 ---
@@ -1833,11 +1857,11 @@ git commit -m "feat: adiciona AclRepository e resolve cd_perfil real no AuthServ
 ```php
 class AclService
 {
-    public function isAllowed(int $cdPerfil, string $recurso, string $privilegio): bool;
+    public function isAllowed(array $cdPerfis, string $recurso, string $privilegio): bool; // uniao — true se QUALQUER perfil da lista conceder
     public function invalidar(int $cdPerfil): void;
 }
 ```
-Rota passa exigência de ACL via opção customizada: `Router::get(..., ['middleware' => [...], 'acl' => ['recurso' => 'pessoa', 'privilegio' => 'listar']])` — consumido pelas rotas de Pessoa na Task 14.
+Rota passa exigência de ACL via opção customizada: `Router::get(..., ['middleware' => [...], 'acl' => ['recurso' => 'pessoa', 'privilegio' => 'listar']])` — consumido pelas rotas de Pessoa na Task 14. `AclMiddleware` lê `IdentidadeContext::cdPerfis()` (lista) e passa a lista inteira pro `AclService`.
 
 - [ ] **Step 1: Escrever o teste do `AclService`**
 
@@ -1866,9 +1890,21 @@ class AclServiceTest extends TestCase
         $redis->del('acl:perfil:1');
 
         // primeira chamada monta do banco e grava no cache
-        $aclService->isAllowed(1, 'pessoa', 'listar');
+        $aclService->isAllowed([1], 'pessoa', 'listar');
 
         $this->assertNotEmpty($redis->get('acl:perfil:1'));
+    }
+
+    public function testIsAllowedRetornaTrueSeQualquerPerfilDaListaConceder()
+    {
+        $aclService = $this->getContainer()->get(AclService::class);
+        $redis = $this->getContainer()->get(Redis::class);
+
+        $redis->setex('acl:perfil:1', 3600, json_encode(['pessoa' => []]));
+        $redis->setex('acl:perfil:2', 3600, json_encode(['pessoa' => ['listar']]));
+
+        $this->assertTrue($aclService->isAllowed([1, 2], 'pessoa', 'listar'));
+        $this->assertFalse($aclService->isAllowed([1], 'pessoa', 'listar'));
     }
 
     public function testInvalidarRemoveOCache()
@@ -1876,7 +1912,7 @@ class AclServiceTest extends TestCase
         $aclService = $this->getContainer()->get(AclService::class);
         $redis = $this->getContainer()->get(Redis::class);
 
-        $aclService->isAllowed(1, 'pessoa', 'listar');
+        $aclService->isAllowed([1], 'pessoa', 'listar');
         $this->assertNotEmpty($redis->get('acl:perfil:1'));
 
         $aclService->invalidar(1);
@@ -1910,11 +1946,17 @@ class AclService
     {
     }
 
-    public function isAllowed(int $cdPerfil, string $recurso, string $privilegio): bool
+    public function isAllowed(array $cdPerfis, string $recurso, string $privilegio): bool
     {
-        $permissoes = $this->permissoesDoPerfil($cdPerfil);
+        foreach ($cdPerfis as $cdPerfil) {
+            $permissoes = $this->permissoesDoPerfil($cdPerfil);
 
-        return in_array($privilegio, $permissoes[$recurso] ?? [], true);
+            if (in_array($privilegio, $permissoes[$recurso] ?? [], true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function invalidar(int $cdPerfil): void
@@ -2025,7 +2067,7 @@ class AclMiddleware implements MiddlewareInterface
         }
 
         $permitido = $this->aclService->isAllowed(
-            IdentidadeContext::cdPerfil(),
+            IdentidadeContext::cdPerfis(),
             $opcoesAcl['recurso'],
             $opcoesAcl['privilegio']
         );
@@ -2666,7 +2708,7 @@ class PessoaControllerTest extends TestCase
         $redis->setex("session:{$this->token}", 3600, json_encode([
             'cd_pessoa' => 1,
             'cd_cliente' => 1,
-            'cd_perfil' => 1,
+            'cd_perfis' => [1],
         ]));
 
         // garantir que o perfil 1 tem os privilégios de pessoa liberados nesta massa de teste
@@ -3031,7 +3073,7 @@ git commit -m "chore: cs-fix final apos implementacao completa"
 
 **1. Cobertura do spec:** ORM (Task 1/5/6/7), banco/schema compartilhado (Tasks 4/5/6/7), estrutura de pastas (todas as tasks seguem a convenção), auth token opaco + cascata de senha (Tasks 8/9), ACL Redis + middleware (Tasks 10/11), CRUD completo incl. PATCH/DELETE/soft-delete (Tasks 6/7/12/13/14), paginação/filtro (Tasks 7/13/14), OpenAPI (Task 15), container de docs (Task 16), exception handlers (Task 3), remoção do teste órfão (Task 1), `composer test` passando (Task 17). Sem lacuna encontrada.
 
-**2. Placeholders:** um único `TODO` proposital na Task 10 (tabela pessoa↔perfil não mapeada no brainstorming) — está descrito como bloqueio explícito a resolver antes de prosseguir, com passo de investigação concreto (Step 1 da própria task), não é um placeholder vago.
+**2. Placeholders:** nenhum. O vínculo pessoa↔perfil (`lgin_pessoa_perfil` + `unim_coligada`) foi investigado e validado contra dado real (múltiplos perfis simultâneos confirmados) antes de fechar este plano — código da Task 8 já usa a query real, sem TODO.
 
 **3. Consistência de tipos:** `PessoaRepositoryInterface` (Task 6, ampliada na Task 7) usada identicamente em `PessoaService` (Task 13); `AclService::isAllowed(int, string, string)` (Task 11) casa com a chamada em `AclMiddleware` (mesma task); `IdentidadeContext::cdCliente()`/`cdPerfil()`/`cdPessoa()` (Task 8) usados com esses nomes exatos em `AclMiddleware` (Task 11) e `PessoaController` (Task 14).
 
