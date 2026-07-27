@@ -51,7 +51,7 @@ When you don't want to use Docker as the basis for your running environment, you
 The easiest way to create a new Hyperf project is to use [Composer](https://getcomposer.org/). If you don't have it already installed, then please install as per [the documentation](https://getcomposer.org/download/).
 
 ```bash
-docker run -v ./:/opt/www -w /opt/www --rm hyperf/hyperf:8.4-alpine-v3.22-swoole-slim composer install
+docker run -v ./:/opt/www -w /opt/www --rm hyperf/hyperf:8.4-alpine-v3.23-swoole-slim composer install
 ```
 
 To create your new Hyperf project:
@@ -112,3 +112,9 @@ Para subir em produção **sem** o watcher (hot reload) e com otimizações:
    Se quiser uma imagem sem montar código do host: no `Dockerfile` descomente e use `RUN composer install --no-dev --optimize-autoloader` no build e, no servidor, não monte o volume `.:/opt/www` (ou use um `docker-compose.prod.yml` que não defina esse volume).
 
 **Remember:** you can always replace the contents of this README.md file to something that fits your project description.
+
+## Rodar migration
+
+```shell
+docker exec lumina php /opt/www/bin/hyperf.php migrate --force
+```
