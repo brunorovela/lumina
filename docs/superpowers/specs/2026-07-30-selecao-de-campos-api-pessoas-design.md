@@ -84,7 +84,7 @@ Campo inválido, no envelope que a API já usa:
 
 | Componente | Responsabilidade | Depende de |
 |---|---|---|
-| `App\Support\Campos\Campo` | Objeto de valor imutável: coluna direta, ou par (relação, coluna), mais a flag `noPadrao` | nada |
+| `App\Support\Campos\Campo` | Objeto de valor imutável: coluna direta, ou trio (relação, coluna, chave estrangeira), mais a flag `noPadrao` | nada |
 | `App\Support\Campos\SelecaoDeCampos` | Interpreta a string crua contra um mapa e deriva o que cada camada precisa | `Campo` |
 | `App\Resource\Pessoa\MapaDeCamposPessoa` | Declara o schema exposto de pessoa | `Campo` |
 
@@ -99,10 +99,10 @@ Campo inválido, no envelope que a API já usa:
 'ds_login'                  => Campo::coluna('ds_login', noPadrao: true),
 'sn_pessoa_juridica'        => Campo::coluna('sn_pessoa_juridica', noPadrao: true),
 'cd_cliente'                => Campo::coluna('cd_cliente'),
-'fisica.ds_nome_oficial'    => Campo::relacao('fisica', 'ds_nome_oficial'),
-'fisica.ds_cpf'             => Campo::relacao('fisica', 'ds_cpf'),
-'juridica.ds_cnpj'          => Campo::relacao('juridica', 'ds_cnpj'),
-'juridica.ds_nome_fantasia' => Campo::relacao('juridica', 'ds_nome_fantasia'),
+'fisica.ds_nome_oficial'    => Campo::relacao('fisica', 'ds_nome_oficial', self::CHAVE_LOCAL),
+'fisica.ds_cpf'             => Campo::relacao('fisica', 'ds_cpf', self::CHAVE_LOCAL),
+'juridica.ds_cnpj'          => Campo::relacao('juridica', 'ds_cnpj', self::CHAVE_LOCAL),
+'juridica.ds_nome_fantasia' => Campo::relacao('juridica', 'ds_nome_fantasia', self::CHAVE_LOCAL),
 ```
 
 Um arquivo responde três perguntas hoje espalhadas: o que é exposto, para onde cada campo aponta, e o que entra no default enxuto.
@@ -118,7 +118,9 @@ Um arquivo responde três perguntas hoje espalhadas: o que é exposto, para onde
 | `campos()` | chaves do mapa a manter na saída — **não** inclui `cd_pessoa`/FK adicionados por necessidade de join | Resource |
 | `tudo()` | `true` quando `fields=*` ou seleção ausente no item | Resource, Repository |
 
-Construção: `SelecaoDeCampos::de(?string $fields, array $mapa, bool $padraoEhTudo)`.
+Construção: `SelecaoDeCampos::de(?string $fields, array $mapa, string $chaveLocal, bool $padraoEhTudo = false)`.
+
+Os nomes das chaves de join são dados explícitos, não convenção: a **chave estrangeira** vem em cada `Campo::relacao()` e a **chave local** do pai vem no `$chaveLocal`. Assumir `cd_pessoa` por default deixaria conhecimento de pessoa dentro da classe genérica — e a próxima Resource pagaria por isso. `MapaDeCamposPessoa::selecao()` encapsula os dois, de forma que o call site não repita nada.
 
 ### Curingas
 
