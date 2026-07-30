@@ -318,6 +318,34 @@ class PessoaControllerTest extends TestCase
         $this->assertNull($linhaJuridica);
     }
 
+    public function testFieldsComCampoInexistenteRetorna422()
+    {
+        $resposta = $this->get('/pessoas?fields=ds_nome,ds_nomee', [], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertContains('Campo não permitido: ds_nomee.', $resposta->json('errors.fields'));
+    }
+
+    /**
+     * ds_senha não está no mapa, então recebe exatamente a mesma mensagem de um typo — a
+     * resposta não pode confirmar que a coluna existe.
+     */
+    public function testFieldsComDsSenhaRetorna422ComAMesmaMensagemDeUmTypo()
+    {
+        $resposta = $this->get('/pessoas?fields=ds_senha', [], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertSame(['Campo não permitido: ds_senha.'], $resposta->json('errors.fields'));
+    }
+
+    public function testFieldsValidoNaoCaiNa422()
+    {
+        $this->get('/pessoas?fields=ds_nome,fisica.ds_cpf', [], $this->headers())->assertStatus(200);
+        $this->get('/pessoas?fields=*', [], $this->headers())->assertStatus(200);
+        $this->get('/pessoas?fields=fisica.*', [], $this->headers())->assertStatus(200);
+        $this->get('/pessoas?fields=', [], $this->headers())->assertStatus(200);
+    }
+
     private function headers(): array
     {
         return ['Authorization' => "Bearer {$this->token}"];
