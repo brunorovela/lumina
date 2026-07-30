@@ -33,6 +33,9 @@ final class IdentidadeContext
         return (int) self::get()['cd_cliente'];
     }
 
+    /**
+     * @return int[]
+     */
     public static function cdPerfis(): array
     {
         return array_map('intval', self::get()['cd_perfis'] ?? []);

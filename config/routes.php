@@ -11,6 +11,8 @@ declare(strict_types=1);
  */
 use App\Controller\Auth\AuthController;
 use App\Controller\Pessoa\PessoaController;
+use App\Enum\Privilegio;
+use App\Enum\Recurso;
 use App\Middleware\AclMiddleware;
 use App\Middleware\AuthMiddleware;
 use Hyperf\HttpServer\Router\Router;
@@ -35,23 +37,33 @@ Router::get('/favicon.ico', function () {
 Router::post('/auth/login', [AuthController::class, 'login'], ['middleware' => [ValidationMiddleware::class]]);
 Router::post('/auth/logout', [AuthController::class, 'logout'], ['middleware' => [AuthMiddleware::class]]);
 
+// As chaves de ACL são as MESMAS do LMS atual (ulms_recurso.ds_chave /
+// ulms_privilegio.ds_chave). O LMS não tem privilégio de "listar"/"visualizar":
+// leitura é ACESSAR (ver Admin\Controller\GerenciarPessoaController::listarAction()).
 Router::addGroup('/pessoas', function () {
     Router::post('', [PessoaController::class, 'criar'], [
-        'acl' => ['recurso' => 'pessoa', 'privilegio' => 'criar'],
+        'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::INSERIR],
         'middleware' => [ValidationMiddleware::class],
     ]);
     Router::put('/{id}', [PessoaController::class, 'atualizar'], [
-        'acl' => ['recurso' => 'pessoa', 'privilegio' => 'atualizar'],
+        'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ATUALIZAR],
         'middleware' => [ValidationMiddleware::class],
     ]);
     Router::patch('/{id}', [PessoaController::class, 'atualizarParcial'], [
-        'acl' => ['recurso' => 'pessoa', 'privilegio' => 'atualizar'],
+        'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ATUALIZAR],
         'middleware' => [ValidationMiddleware::class],
     ]);
-    Router::get('/{id}', [PessoaController::class, 'buscar'], ['acl' => ['recurso' => 'pessoa', 'privilegio' => 'visualizar']]);
+    Router::get('/{id}', [PessoaController::class, 'buscar'], [
+        'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
+    ]);
     Router::get('', [PessoaController::class, 'listar'], [
-        'acl' => ['recurso' => 'pessoa', 'privilegio' => 'listar'],
+        'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
         'middleware' => [ValidationMiddleware::class],
     ]);
-    Router::delete('/{id}', [PessoaController::class, 'excluir'], ['acl' => ['recurso' => 'pessoa', 'privilegio' => 'excluir']]);
+    // GERENCIAR_PESSOA + DELETAR não existia em ulms_recurso_privilegio (o LMS não expõe
+    // exclusão de pessoa); o par é criado pela migration
+    // 2026_07_30_000000_adiciona_privilegio_deletar_em_gerenciar_pessoa.
+    Router::delete('/{id}', [PessoaController::class, 'excluir'], [
+        'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::DELETAR],
+    ]);
 }, ['middleware' => [AuthMiddleware::class, AclMiddleware::class]]);

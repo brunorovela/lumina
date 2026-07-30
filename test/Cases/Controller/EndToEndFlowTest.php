@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 namespace HyperfTest\Cases\Controller;
 
+use App\Enum\Privilegio;
+use App\Enum\Recurso;
 use Hyperf\DbConnection\Db;
 use Hyperf\Redis\Redis;
 use Hyperf\Testing\TestCase;
@@ -73,9 +75,7 @@ class EndToEndFlowTest extends TestCase
         ]);
 
         $redis = $this->getContainer()->get(Redis::class);
-        $redis->setex('acl:perfil:1', 3600, json_encode([
-            'pessoa' => ['criar', 'atualizar', 'visualizar', 'listar', 'excluir'],
-        ]));
+        $redis->setex('acl:perfil:1', 3600, json_encode(self::permissoesPessoa()));
 
         // --- login de verdade ---
         $login = $this->post('/auth/login', [
@@ -134,9 +134,7 @@ class EndToEndFlowTest extends TestCase
             'cd_cliente' => 1,
             'cd_perfis' => [1],
         ]));
-        $redis->setex('acl:perfil:1', 3600, json_encode([
-            'pessoa' => ['criar', 'atualizar', 'visualizar', 'listar', 'excluir'],
-        ]));
+        $redis->setex('acl:perfil:1', 3600, json_encode(self::permissoesPessoa()));
 
         $tokenOutroCliente = bin2hex(random_bytes(32));
         $redis->setex("session:{$tokenOutroCliente}", 3600, json_encode([
@@ -144,9 +142,7 @@ class EndToEndFlowTest extends TestCase
             'cd_cliente' => 2,
             'cd_perfis' => [900002],
         ]));
-        $redis->setex('acl:perfil:900002', 3600, json_encode([
-            'pessoa' => ['criar', 'atualizar', 'visualizar', 'listar', 'excluir'],
-        ]));
+        $redis->setex('acl:perfil:900002', 3600, json_encode(self::permissoesPessoa()));
 
         $criar = $this->json('/pessoas', [
             'ds_nome' => 'E2E Isolamento Cliente Um',
@@ -203,5 +199,23 @@ class EndToEndFlowTest extends TestCase
 
         // depois do logout, o mesmo token não autentica mais
         $this->get('/pessoas', [], $headers)->assertStatus(401);
+    }
+
+    /**
+     * Massa de cache ACL usando as ds_chave reais do LMS (ulms_recurso / ulms_privilegio).
+     * DELETAR depende da migration que liga o privilégio a GERENCIAR_PESSOA.
+     *
+     * @return array<string, string[]>
+     */
+    private static function permissoesPessoa(): array
+    {
+        return [
+            Recurso::GERENCIAR_PESSOA->value => [
+                Privilegio::ACESSAR->value,
+                Privilegio::INSERIR->value,
+                Privilegio::ATUALIZAR->value,
+                Privilegio::DELETAR->value,
+            ],
+        ];
     }
 }

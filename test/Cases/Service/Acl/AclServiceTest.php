@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 namespace HyperfTest\Cases\Service\Acl;
 
+use App\Enum\Privilegio;
+use App\Enum\Recurso;
 use App\Service\Acl\AclService;
 use Hyperf\Redis\Redis;
 use Hyperf\Testing\TestCase;
@@ -30,7 +32,7 @@ class AclServiceTest extends TestCase
         $redis->del('acl:perfil:1');
 
         // primeira chamada monta do banco e grava no cache
-        $aclService->isAllowed([1], 'pessoa', 'listar');
+        $aclService->isAllowed([1], Recurso::GERENCIAR_PESSOA, Privilegio::ACESSAR);
 
         $this->assertNotEmpty($redis->get('acl:perfil:1'));
     }
@@ -40,11 +42,11 @@ class AclServiceTest extends TestCase
         $aclService = $this->getContainer()->get(AclService::class);
         $redis = $this->getContainer()->get(Redis::class);
 
-        $redis->setex('acl:perfil:1', 3600, json_encode(['pessoa' => []]));
-        $redis->setex('acl:perfil:2', 3600, json_encode(['pessoa' => ['listar']]));
+        $redis->setex('acl:perfil:1', 3600, json_encode(['GERENCIAR_PESSOA' => []]));
+        $redis->setex('acl:perfil:2', 3600, json_encode(['GERENCIAR_PESSOA' => ['ACESSAR']]));
 
-        $this->assertTrue($aclService->isAllowed([1, 2], 'pessoa', 'listar'));
-        $this->assertFalse($aclService->isAllowed([1], 'pessoa', 'listar'));
+        $this->assertTrue($aclService->isAllowed([1, 2], Recurso::GERENCIAR_PESSOA, Privilegio::ACESSAR));
+        $this->assertFalse($aclService->isAllowed([1], Recurso::GERENCIAR_PESSOA, Privilegio::ACESSAR));
     }
 
     public function testInvalidarRemoveOCache()
@@ -52,10 +54,39 @@ class AclServiceTest extends TestCase
         $aclService = $this->getContainer()->get(AclService::class);
         $redis = $this->getContainer()->get(Redis::class);
 
-        $aclService->isAllowed([1], 'pessoa', 'listar');
+        $aclService->isAllowed([1], Recurso::GERENCIAR_PESSOA, Privilegio::ACESSAR);
         $this->assertNotEmpty($redis->get('acl:perfil:1'));
 
         $aclService->invalidar(1);
         $this->assertFalse($redis->get('acl:perfil:1'));
+    }
+
+    /**
+     * Regressão: o cache guarda ds_chave crua, então uma chave que não existe no banco
+     * (o bug antigo: 'pessoa'/'listar') tem que negar, e a chave certa tem que liberar
+     * com a MESMA massa de cache.
+     */
+    public function testCacheDoBancoUsaDsChaveEmMaiusculoDoLms()
+    {
+        $aclService = $this->getContainer()->get(AclService::class);
+        $redis = $this->getContainer()->get(Redis::class);
+
+        $redis->setex('acl:perfil:1', 3600, json_encode([
+            'GERENCIAR_PESSOA' => ['ACESSAR', 'INSERIR', 'ATUALIZAR'],
+        ]));
+
+        $this->assertTrue($aclService->isAllowed([1], Recurso::GERENCIAR_PESSOA, Privilegio::INSERIR));
+        $this->assertFalse($aclService->isAllowed([1], Recurso::GERENCIAR_PESSOA, Privilegio::DELETAR));
+        $this->assertFalse($aclService->isAllowed([1], Recurso::GERENCIAR_CURSO, Privilegio::ACESSAR));
+    }
+
+    public function testCacheCorrompidoCaiParaOBancoEmVezDeExplodir()
+    {
+        $aclService = $this->getContainer()->get(AclService::class);
+        $redis = $this->getContainer()->get(Redis::class);
+
+        $redis->setex('acl:perfil:1', 3600, 'nao-e-json');
+
+        $this->assertFalse($aclService->isAllowed([1], Recurso::GERENCIAR_PESSOA, Privilegio::ACESSAR));
     }
 }

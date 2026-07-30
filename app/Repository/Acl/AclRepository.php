@@ -16,6 +16,9 @@ use Hyperf\DbConnection\Db;
 
 class AclRepository
 {
+    /**
+     * @return array<string, string[]> ds_chave do recurso => lista de ds_chave de privilégio
+     */
     public function buscarPermissoesPorPerfil(int $cdPerfil): array
     {
         $linhas = Db::table('lgin_perfil_recurso_privilegio as lprp')
@@ -29,7 +32,10 @@ class AclRepository
         $permissoes = [];
 
         foreach ($linhas as $linha) {
-            $permissoes[$linha->recurso][] = $linha->privilegio;
+            /** @var array{recurso: string, privilegio: string} $registro */
+            $registro = (array) $linha;
+
+            $permissoes[$registro['recurso']][] = $registro['privilegio'];
         }
 
         return $permissoes;

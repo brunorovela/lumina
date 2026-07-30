@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 namespace HyperfTest\Cases\Controller\Pessoa;
 
+use App\Enum\Privilegio;
+use App\Enum\Recurso;
 use Hyperf\DbConnection\Db;
 use Hyperf\Redis\Redis;
 use Hyperf\Testing\TestCase;
@@ -36,9 +38,16 @@ class PessoaControllerTest extends TestCase
             'cd_perfis' => [1],
         ]));
 
-        // garantir que o perfil 1 tem os privilégios de pessoa liberados nesta massa de teste
+        // garantir que o perfil 1 tem os privilégios de pessoa liberados nesta massa de teste.
+        // As chaves têm que ser as ds_chave reais do LMS (ulms_recurso / ulms_privilegio) —
+        // chave inventada aqui esconde o bug em vez de testá-lo.
         $redis->setex('acl:perfil:1', 3600, json_encode([
-            'pessoa' => ['criar', 'atualizar', 'visualizar', 'listar', 'excluir'],
+            Recurso::GERENCIAR_PESSOA->value => [
+                Privilegio::ACESSAR->value,
+                Privilegio::INSERIR->value,
+                Privilegio::ATUALIZAR->value,
+                Privilegio::DELETAR->value,
+            ],
         ]));
     }
 
@@ -221,7 +230,39 @@ class PessoaControllerTest extends TestCase
     public function testSemPermissaoAclRetorna403()
     {
         $redis = $this->getContainer()->get(Redis::class);
-        $redis->setex('acl:perfil:1', 3600, json_encode(['pessoa' => []]));
+        $redis->setex('acl:perfil:1', 3600, json_encode([Recurso::GERENCIAR_PESSOA->value => []]));
+
+        $this->get('/pessoas', [], $this->headers())->assertStatus(403);
+    }
+
+    /**
+     * GET /pessoas exige GERENCIAR_PESSOA + ACESSAR. Ter só INSERIR/ATUALIZAR (escrita)
+     * não pode liberar leitura — é o pareamento recurso+privilégio que precisa bater.
+     */
+    public function testPrivilegioDeEscritaNaoLiberaLeitura()
+    {
+        $redis = $this->getContainer()->get(Redis::class);
+        $redis->setex('acl:perfil:1', 3600, json_encode([
+            Recurso::GERENCIAR_PESSOA->value => [
+                Privilegio::INSERIR->value,
+                Privilegio::ATUALIZAR->value,
+            ],
+        ]));
+
+        $this->get('/pessoas', [], $this->headers())->assertStatus(403);
+    }
+
+    /**
+     * Regressão do bug relatado: as chaves antigas ('pessoa' / 'criar'|'listar'|...) não
+     * existem em ulms_recurso / ulms_privilegio. Um cache montado com elas tem que dar
+     * 403 — se der 200, alguém voltou a comparar chave inventada.
+     */
+    public function testChavesAntigasMinusculasNaoConcedemNada()
+    {
+        $redis = $this->getContainer()->get(Redis::class);
+        $redis->setex('acl:perfil:1', 3600, json_encode([
+            'pessoa' => ['criar', 'atualizar', 'visualizar', 'listar', 'excluir'],
+        ]));
 
         $this->get('/pessoas', [], $this->headers())->assertStatus(403);
     }

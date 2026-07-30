@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 namespace HyperfTest\Cases\Middleware;
 
+use App\Enum\Privilegio;
+use App\Enum\Recurso;
 use Hyperf\HttpServer\Router\Dispatched;
 use Hyperf\HttpServer\Router\DispatcherFactory;
 use Hyperf\HttpServer\Router\Router;
@@ -37,7 +39,7 @@ class AclMiddlewareTest extends TestCase
         Router::get(
             '/__teste_acl_options',
             static fn () => 'ok',
-            ['acl' => ['recurso' => 'pessoa', 'privilegio' => 'listar']]
+            ['acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR]]
         );
 
         $resposta = $this->get('/__teste_acl_options');
@@ -67,7 +69,7 @@ class AclMiddlewareTest extends TestCase
             static fn () => 'ok',
             [
                 'middleware' => [AclOptionsProbeMiddleware::class],
-                'acl' => ['recurso' => 'pessoa', 'privilegio' => 'listar'],
+                'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
             ]
         );
 
@@ -76,7 +78,7 @@ class AclMiddlewareTest extends TestCase
         $resposta->assertStatus(200);
         $this->assertTrue(AclOptionsProbeMiddleware::$rodou, 'O middleware registrado via opção "middleware" da rota precisa ter rodado.');
         $this->assertSame(
-            ['recurso' => 'pessoa', 'privilegio' => 'listar'],
+            ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
             AclOptionsProbeMiddleware::$optionsCapturadas
         );
     }
