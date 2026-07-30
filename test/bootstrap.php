@@ -12,6 +12,7 @@ declare(strict_types=1);
 use Hyperf\Contract\ApplicationInterface;
 use Hyperf\Di\ClassLoader;
 use Hyperf\Engine\DefaultOption;
+use HyperfTest\Support\TenantDeTeste;
 
 ini_set('display_errors', 'on');
 ini_set('display_startup_errors', 'on');
@@ -41,3 +42,18 @@ ClassLoader::init();
 $container = require BASE_PATH . '/config/container.php';
 
 $container->get(ApplicationInterface::class);
+
+// Limpa resíduo de rodada abortada ANTES de começar: sobra de pessoa no tenant de teste faz
+// a contagem de PessoaRepositoryTest::testListar... falhar na rodada seguinte. E limpa de
+// novo no fim, para não deixar massa na base compartilhada.
+//
+// Roda dentro de corrotina porque o pool de conexões do Hyperf exige contexto de corrotina.
+Swoole\Coroutine\run(static function () {
+    TenantDeTeste::limpar();
+});
+
+register_shutdown_function(static function () {
+    Swoole\Coroutine\run(static function () {
+        TenantDeTeste::limpar();
+    });
+});

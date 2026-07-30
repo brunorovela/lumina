@@ -15,6 +15,7 @@ namespace HyperfTest\Cases\Repository\Auth;
 use App\Repository\Auth\AuthRepositoryInterface;
 use Hyperf\DbConnection\Db;
 use Hyperf\Testing\TestCase;
+use HyperfTest\Support\TenantDeTeste;
 
 /**
  * Finding 13 (whole-branch review): AuthService falava SQL direto via Hyperf\DbConnection\Db
@@ -44,20 +45,20 @@ class AuthRepositoryTest extends TestCase
         $repository = $this->getContainer()->get(AuthRepositoryInterface::class);
 
         $cdPessoa = Db::table('unim_pessoa')->insertGetId([
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_nome' => 'Auth Repo Teste',
             'ds_login' => 'teste.authrepo.ativa',
             'ds_senha' => 'hash',
             'sn_pessoa_juridica' => 0,
         ]);
 
-        $encontrada = $repository->buscarPessoaAtivaPorLoginECliente(1, 'teste.authrepo.ativa');
+        $encontrada = $repository->buscarPessoaAtivaPorLoginECliente(TenantDeTeste::cdCliente(), 'teste.authrepo.ativa');
         $this->assertNotNull($encontrada);
         $this->assertSame($cdPessoa, $encontrada->cd_pessoa);
 
         Db::table('unim_pessoa')->where('cd_pessoa', $cdPessoa)->update(['dt_excluido' => date('Y-m-d H:i:s')]);
 
-        $depoisDeExcluir = $repository->buscarPessoaAtivaPorLoginECliente(1, 'teste.authrepo.ativa');
+        $depoisDeExcluir = $repository->buscarPessoaAtivaPorLoginECliente(TenantDeTeste::cdCliente(), 'teste.authrepo.ativa');
         $this->assertNull($depoisDeExcluir);
     }
 
@@ -66,27 +67,28 @@ class AuthRepositoryTest extends TestCase
         $repository = $this->getContainer()->get(AuthRepositoryInterface::class);
 
         $cdPessoa = Db::table('unim_pessoa')->insertGetId([
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_nome' => 'Auth Repo Perfis',
             'ds_login' => 'teste.authrepo.perfis',
             'ds_senha' => 'hash',
             'sn_pessoa_juridica' => 0,
         ]);
 
-        $cdColigada = Db::table('unim_coligada')->insertGetId([
-            'cd_pessoa' => $cdPessoa,
-            'cd_cliente' => 1,
-            'cd_idioma' => 27,
-        ]);
+        $cdColigada = TenantDeTeste::criarColigada($cdPessoa);
+
+        $cdPerfilUm = TenantDeTeste::cdPerfil();
+        $cdPerfilDois = TenantDeTeste::cdPerfil('SECUNDARIO');
 
         Db::table('lgin_pessoa_perfil')->insert([
-            ['cd_pessoa' => $cdPessoa, 'cd_perfil' => 1, 'cd_coligada' => $cdColigada],
-            ['cd_pessoa' => $cdPessoa, 'cd_perfil' => 2, 'cd_coligada' => $cdColigada],
+            ['cd_pessoa' => $cdPessoa, 'cd_perfil' => $cdPerfilUm, 'cd_coligada' => $cdColigada],
+            ['cd_pessoa' => $cdPessoa, 'cd_perfil' => $cdPerfilDois, 'cd_coligada' => $cdColigada],
         ]);
 
-        $perfis = $repository->buscarPerfisDaPessoa($cdPessoa, 1);
+        $perfis = $repository->buscarPerfisDaPessoa($cdPessoa, TenantDeTeste::cdCliente());
 
-        $this->assertSame([1, 2], $perfis);
+        // Canonizing: a query não declara ORDER BY, então a ordem não faz parte do contrato
+        // — afirmar ordem aqui seria testar detalhe de implementação do MySQL.
+        $this->assertEqualsCanonicalizing([$cdPerfilUm, $cdPerfilDois], $perfis);
     }
 
     public function testAtualizarSenhaGravaOHashInformado()
@@ -94,7 +96,7 @@ class AuthRepositoryTest extends TestCase
         $repository = $this->getContainer()->get(AuthRepositoryInterface::class);
 
         $cdPessoa = Db::table('unim_pessoa')->insertGetId([
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_nome' => 'Auth Repo Senha',
             'ds_login' => 'teste.authrepo.senha',
             'ds_senha' => 'hash-antigo',

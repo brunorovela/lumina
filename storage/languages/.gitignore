@@ -1,2 +1,13 @@
-*.php
-!.gitignore
+# ATENÇÃO: este arquivo ignorava `*.php`, e o efeito não era só "sujeira fora do git" — era
+# que NENHUM arquivo de mensagem existia num checkout limpo. Sem eles o
+# Hyperf\Translation\Translator não tem o que traduzir e devolve a chave crua: toda resposta
+# 422 da API saía com "validation.required" em vez de mensagem de verdade (o 'locale' => 'en'
+# de config/autoload/translation.php não resolve sozinho — ele escolhe o idioma, não cria as
+# mensagens).
+#
+# Arquivo de idioma é código de produção: tem que estar versionado. Publicado de
+# vendor/hyperf/validation/publish/en com:
+#
+#     docker exec lumina php /opt/www/bin/hyperf.php vendor:publish hyperf/validation
+#
+# Se for adicionar pt_BR, versione junto.

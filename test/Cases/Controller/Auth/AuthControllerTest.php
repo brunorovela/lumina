@@ -14,6 +14,7 @@ namespace HyperfTest\Cases\Controller\Auth;
 
 use Hyperf\DbConnection\Db;
 use Hyperf\Testing\TestCase;
+use HyperfTest\Support\TenantDeTeste;
 
 /**
  * @internal
@@ -30,7 +31,7 @@ class AuthControllerTest extends TestCase
     public function testLoginComCredenciaisValidasRetornaToken()
     {
         Db::table('unim_pessoa')->insert([
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_nome' => 'Controller Auth Teste',
             'ds_login' => 'teste.controller.auth',
             'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
@@ -38,7 +39,7 @@ class AuthControllerTest extends TestCase
         ]);
 
         $resposta = $this->post('/auth/login', [
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_login' => 'teste.controller.auth',
             'ds_senha' => '123456',
         ]);
@@ -51,7 +52,7 @@ class AuthControllerTest extends TestCase
     public function testLoginComSenhaErradaRetorna401()
     {
         Db::table('unim_pessoa')->insert([
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_nome' => 'Controller Auth Teste',
             'ds_login' => 'teste.controller.auth',
             'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
@@ -59,7 +60,7 @@ class AuthControllerTest extends TestCase
         ]);
 
         $resposta = $this->post('/auth/login', [
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_login' => 'teste.controller.auth',
             'ds_senha' => 'errada',
         ]);

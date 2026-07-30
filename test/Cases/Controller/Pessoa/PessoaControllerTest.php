@@ -17,6 +17,7 @@ use App\Enum\Recurso;
 use Hyperf\DbConnection\Db;
 use Hyperf\Redis\Redis;
 use Hyperf\Testing\TestCase;
+use HyperfTest\Support\TenantDeTeste;
 
 /**
  * @internal
@@ -26,22 +27,29 @@ class PessoaControllerTest extends TestCase
 {
     private string $token;
 
+    private int $cdPerfil;
+
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Ids fixos (cd_cliente=1, cd_perfis=[1]) não existem no banco: o insert de pessoa
+        // batia na FK de saas_cliente e o erro chegava como 409, parecendo login duplicado.
+        // O tenant descartável da suíte resolve os ids de verdade.
+        $this->cdPerfil = TenantDeTeste::cdPerfil();
 
         $redis = $this->getContainer()->get(Redis::class);
         $this->token = bin2hex(random_bytes(32));
         $redis->setex("session:{$this->token}", 3600, json_encode([
             'cd_pessoa' => 1,
-            'cd_cliente' => 1,
-            'cd_perfis' => [1],
+            'cd_cliente' => TenantDeTeste::cdCliente(),
+            'cd_perfis' => [$this->cdPerfil],
         ]));
 
-        // garantir que o perfil 1 tem os privilégios de pessoa liberados nesta massa de teste.
+        // garantir que o perfil de teste tem os privilégios de pessoa liberados nesta massa.
         // As chaves têm que ser as ds_chave reais do LMS (ulms_recurso / ulms_privilegio) —
         // chave inventada aqui esconde o bug em vez de testá-lo.
-        $redis->setex('acl:perfil:1', 3600, json_encode([
+        $redis->setex("acl:perfil:{$this->cdPerfil}", 3600, json_encode([
             Recurso::GERENCIAR_PESSOA->value => [
                 Privilegio::ACESSAR->value,
                 Privilegio::INSERIR->value,
@@ -230,7 +238,7 @@ class PessoaControllerTest extends TestCase
     public function testSemPermissaoAclRetorna403()
     {
         $redis = $this->getContainer()->get(Redis::class);
-        $redis->setex('acl:perfil:1', 3600, json_encode([Recurso::GERENCIAR_PESSOA->value => []]));
+        $redis->setex("acl:perfil:{$this->cdPerfil}", 3600, json_encode([Recurso::GERENCIAR_PESSOA->value => []]));
 
         $this->get('/pessoas', [], $this->headers())->assertStatus(403);
     }
@@ -242,7 +250,7 @@ class PessoaControllerTest extends TestCase
     public function testPrivilegioDeEscritaNaoLiberaLeitura()
     {
         $redis = $this->getContainer()->get(Redis::class);
-        $redis->setex('acl:perfil:1', 3600, json_encode([
+        $redis->setex("acl:perfil:{$this->cdPerfil}", 3600, json_encode([
             Recurso::GERENCIAR_PESSOA->value => [
                 Privilegio::INSERIR->value,
                 Privilegio::ATUALIZAR->value,
@@ -260,7 +268,7 @@ class PessoaControllerTest extends TestCase
     public function testChavesAntigasMinusculasNaoConcedemNada()
     {
         $redis = $this->getContainer()->get(Redis::class);
-        $redis->setex('acl:perfil:1', 3600, json_encode([
+        $redis->setex("acl:perfil:{$this->cdPerfil}", 3600, json_encode([
             'pessoa' => ['criar', 'atualizar', 'visualizar', 'listar', 'excluir'],
         ]));
 

@@ -17,6 +17,7 @@ use App\Enum\Recurso;
 use Hyperf\DbConnection\Db;
 use Hyperf\Redis\Redis;
 use Hyperf\Testing\TestCase;
+use HyperfTest\Support\TenantDeTeste;
 
 /**
  * Finding 6 (whole-branch review): faltava um teste de fluxo ponta-a-ponta real. Até aqui
@@ -29,6 +30,12 @@ use Hyperf\Testing\TestCase;
  */
 class EndToEndFlowTest extends TestCase
 {
+    /**
+     * Perfil fabricado só no Redis para o teste de isolamento entre tenants — nunca é
+     * gravado em lgin_perfil, então não precisa existir.
+     */
+    private const CD_PERFIL_OUTRO_TENANT = 900002;
+
     protected function tearDown(): void
     {
         $cdPessoas = Db::table('unim_pessoa')->where('ds_login', 'like', 'teste.e2e.%')->pluck('cd_pessoa');
@@ -40,8 +47,8 @@ class EndToEndFlowTest extends TestCase
         Db::table('unim_pessoa')->where('ds_login', 'like', 'teste.e2e.%')->delete();
 
         $redis = $this->getContainer()->get(Redis::class);
-        $redis->del('acl:perfil:1');
-        $redis->del('acl:perfil:900002');
+        $redis->del('acl:perfil:' . TenantDeTeste::cdPerfil());
+        $redis->del('acl:perfil:' . self::CD_PERFIL_OUTRO_TENANT);
 
         parent::tearDown();
     }
@@ -53,33 +60,23 @@ class EndToEndFlowTest extends TestCase
     public function testFluxoPontaAPontaLoginRealCrudESoftDelete()
     {
         $cdPessoaLogin = Db::table('unim_pessoa')->insertGetId([
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_nome' => 'E2E Fluxo Completo',
             'ds_login' => 'teste.e2e.fluxo',
             'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
             'sn_pessoa_juridica' => 0,
         ]);
 
-        $cdColigada = Db::table('unim_coligada')->insertGetId([
-            'cd_pessoa' => $cdPessoaLogin,
-            'cd_cliente' => 1,
-            'cd_idioma' => 27,
-        ]);
-
-        // cd_perfil=1 é o mesmo perfil já usado por AuthServiceTest/PessoaControllerTest —
-        // precisa existir de verdade em lgin_perfil (FK real de lgin_pessoa_perfil).
-        Db::table('lgin_pessoa_perfil')->insert([
-            'cd_pessoa' => $cdPessoaLogin,
-            'cd_perfil' => 1,
-            'cd_coligada' => $cdColigada,
-        ]);
+        // O vínculo pessoa -> perfil exige coligada (FK NOT NULL) e um lgin_perfil que
+        // exista de verdade. cd_perfil=1 não existe: os perfis reais começam em 79.
+        TenantDeTeste::vincularPerfil($cdPessoaLogin);
 
         $redis = $this->getContainer()->get(Redis::class);
-        $redis->setex('acl:perfil:1', 3600, json_encode(self::permissoesPessoa()));
+        $redis->setex('acl:perfil:' . TenantDeTeste::cdPerfil(), 3600, json_encode(self::permissoesPessoa()));
 
         // --- login de verdade ---
         $login = $this->post('/auth/login', [
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_login' => 'teste.e2e.fluxo',
             'ds_senha' => '123456',
         ]);
@@ -131,18 +128,21 @@ class EndToEndFlowTest extends TestCase
         $tokenClienteUm = bin2hex(random_bytes(32));
         $redis->setex("session:{$tokenClienteUm}", 3600, json_encode([
             'cd_pessoa' => 1,
-            'cd_cliente' => 1,
-            'cd_perfis' => [1],
+            'cd_cliente' => TenantDeTeste::cdCliente(),
+            'cd_perfis' => [TenantDeTeste::cdPerfil()],
         ]));
-        $redis->setex('acl:perfil:1', 3600, json_encode(self::permissoesPessoa()));
+        $redis->setex('acl:perfil:' . TenantDeTeste::cdPerfil(), 3600, json_encode(self::permissoesPessoa()));
 
+        // O "outro cliente" não precisa existir no banco: nada é gravado sob ele, só se
+        // verifica que uma busca filtrada por cd_cliente não acha a pessoa do primeiro. A
+        // sessão e o cache ACL são fabricados no Redis, sem FK envolvida.
         $tokenOutroCliente = bin2hex(random_bytes(32));
         $redis->setex("session:{$tokenOutroCliente}", 3600, json_encode([
             'cd_pessoa' => 1,
-            'cd_cliente' => 2,
-            'cd_perfis' => [900002],
+            'cd_cliente' => TenantDeTeste::cdClienteInexistente(),
+            'cd_perfis' => [self::CD_PERFIL_OUTRO_TENANT],
         ]));
-        $redis->setex('acl:perfil:900002', 3600, json_encode(self::permissoesPessoa()));
+        $redis->setex('acl:perfil:' . self::CD_PERFIL_OUTRO_TENANT, 3600, json_encode(self::permissoesPessoa()));
 
         $criar = $this->json('/pessoas', [
             'ds_nome' => 'E2E Isolamento Cliente Um',
@@ -174,7 +174,7 @@ class EndToEndFlowTest extends TestCase
     public function testLogoutRealInvalidaOTokenImediatamente()
     {
         Db::table('unim_pessoa')->insert([
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_nome' => 'E2E Logout Teste',
             'ds_login' => 'teste.e2e.logout',
             'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
@@ -182,7 +182,7 @@ class EndToEndFlowTest extends TestCase
         ]);
 
         $login = $this->post('/auth/login', [
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_login' => 'teste.e2e.logout',
             'ds_senha' => '123456',
         ]);

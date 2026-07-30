@@ -17,6 +17,7 @@ use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Service\Pessoa\PessoaService;
 use Hyperf\DbConnection\Db;
 use Hyperf\Testing\TestCase;
+use HyperfTest\Support\TenantDeTeste;
 
 /**
  * @internal
@@ -41,7 +42,7 @@ class PessoaServiceTest extends TestCase
     {
         $service = $this->getContainer()->get(PessoaService::class);
 
-        $pessoa = $service->criar(1, [
+        $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
             'ds_nome' => 'Service Teste',
             'ds_login' => 'teste.service.criar',
             'ds_senha' => '123456',
@@ -57,7 +58,7 @@ class PessoaServiceTest extends TestCase
     {
         $service = $this->getContainer()->get(PessoaService::class);
 
-        $service->criar(1, [
+        $service->criar(TenantDeTeste::cdCliente(), [
             'ds_nome' => 'Duplicado 1',
             'ds_login' => 'teste.service.duplicado',
             'ds_senha' => '123456',
@@ -67,7 +68,7 @@ class PessoaServiceTest extends TestCase
 
         $this->expectException(LoginJaExisteException::class);
 
-        $service->criar(1, [
+        $service->criar(TenantDeTeste::cdCliente(), [
             'ds_nome' => 'Duplicado 2',
             'ds_login' => 'teste.service.duplicado',
             'ds_senha' => '123456',
@@ -91,7 +92,7 @@ class PessoaServiceTest extends TestCase
         $service = $this->getContainer()->get(PessoaService::class);
 
         $existeContaReal = Db::table('unim_pessoa')
-            ->where('cd_cliente', 1)
+            ->where('cd_cliente', TenantDeTeste::cdCliente())
             ->where('ds_login', 'administrador')
             ->exists();
 
@@ -102,7 +103,7 @@ class PessoaServiceTest extends TestCase
         $cdPessoa = null;
 
         try {
-            $pessoa = $service->criar(1, [
+            $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
                 'ds_nome' => 'Administrador Teste',
                 'ds_login' => 'administrador',
                 'ds_senha' => '123456',
@@ -139,7 +140,7 @@ class PessoaServiceTest extends TestCase
         $service = $this->getContainer()->get(PessoaService::class);
 
         $existeContaReal = Db::table('unim_pessoa')
-            ->where('cd_cliente', 1)
+            ->where('cd_cliente', TenantDeTeste::cdCliente())
             ->where('ds_login', 'administrador')
             ->exists();
 
@@ -150,7 +151,7 @@ class PessoaServiceTest extends TestCase
         $cdPessoa = null;
 
         try {
-            $pessoa = $service->criar(1, [
+            $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
                 'ds_nome' => 'Administrador Com Fisica Orfa',
                 'ds_login' => 'administrador',
                 'ds_senha' => '123456',
@@ -165,7 +166,7 @@ class PessoaServiceTest extends TestCase
                 'ds_nome_oficial' => 'Fisica Orfa De Dado Legado',
             ]);
 
-            $atualizada = $service->atualizar($cdPessoa, 1, [
+            $atualizada = $service->atualizar($cdPessoa, TenantDeTeste::cdCliente(), [
                 'ds_nome' => 'Administrador Com Fisica Orfa Renomeado',
                 'ds_login' => 'administrador',
                 'sn_pessoa_juridica' => false,
@@ -187,7 +188,7 @@ class PessoaServiceTest extends TestCase
     {
         $service = $this->getContainer()->get(PessoaService::class);
 
-        $pessoa = $service->criar(1, [
+        $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
             'ds_nome' => 'Mantem Senha',
             'ds_login' => 'teste.service.mantemsenha',
             'ds_senha' => '123456',
@@ -196,7 +197,7 @@ class PessoaServiceTest extends TestCase
         ]);
         $hashOriginal = $pessoa->ds_senha;
 
-        $atualizada = $service->atualizar($pessoa->cd_pessoa, 1, [
+        $atualizada = $service->atualizar($pessoa->cd_pessoa, TenantDeTeste::cdCliente(), [
             'ds_nome' => 'Mantem Senha Renomeado',
             'ds_login' => 'teste.service.mantemsenha',
             'sn_pessoa_juridica' => false,
@@ -214,7 +215,7 @@ class PessoaServiceTest extends TestCase
         // 1, por outra porta, só que via PATCH em vez de PUT).
         $service = $this->getContainer()->get(PessoaService::class);
 
-        $pessoa = $service->criar(1, [
+        $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
             'ds_nome' => 'Patch Tipo Errado',
             'ds_login' => 'teste.service.patchtipoerrado',
             'ds_senha' => '123456',
@@ -222,7 +223,7 @@ class PessoaServiceTest extends TestCase
             'ds_nome_oficial' => 'Patch Tipo Errado',
         ]);
 
-        $atualizada = $service->atualizarParcial($pessoa->cd_pessoa, 1, [
+        $atualizada = $service->atualizarParcial($pessoa->cd_pessoa, TenantDeTeste::cdCliente(), [
             'ds_cnpj' => '00000000000191',
             'ds_nome_fantasia' => 'Nao Deveria Existir',
         ]);
@@ -246,6 +247,6 @@ class PessoaServiceTest extends TestCase
         $service = $this->getContainer()->get(PessoaService::class);
 
         $this->expectException(PessoaNaoEncontradaException::class);
-        $service->buscar(999999, 1);
+        $service->buscar(999999, TenantDeTeste::cdCliente());
     }
 }

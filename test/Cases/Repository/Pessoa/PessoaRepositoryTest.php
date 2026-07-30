@@ -16,6 +16,7 @@ use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Repository\Pessoa\PessoaRepositoryInterface;
 use Hyperf\DbConnection\Db;
 use Hyperf\Testing\TestCase;
+use HyperfTest\Support\TenantDeTeste;
 
 /**
  * @internal
@@ -42,7 +43,7 @@ class PessoaRepositoryTest extends TestCase
 
         $pessoa = $repository->criar(
             [
-                'cd_cliente' => 1,
+                'cd_cliente' => TenantDeTeste::cdCliente(),
                 'ds_nome' => 'Fulano de Teste',
                 'ds_login' => 'teste.repo.fisica',
                 'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
@@ -62,7 +63,7 @@ class PessoaRepositoryTest extends TestCase
 
         $repository->criar(
             [
-                'cd_cliente' => 1,
+                'cd_cliente' => TenantDeTeste::cdCliente(),
                 'ds_nome' => 'Ciclano de Teste',
                 'ds_login' => 'teste.repo.duplicado',
                 'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
@@ -72,7 +73,7 @@ class PessoaRepositoryTest extends TestCase
             null
         );
 
-        $this->assertTrue($repository->loginExiste(1, 'teste.repo.duplicado'));
+        $this->assertTrue($repository->loginExiste(TenantDeTeste::cdCliente(), 'teste.repo.duplicado'));
         $this->assertFalse($repository->loginExiste(2, 'teste.repo.duplicado'));
     }
 
@@ -82,7 +83,7 @@ class PessoaRepositoryTest extends TestCase
 
         $pessoa = $repository->criar(
             [
-                'cd_cliente' => 1,
+                'cd_cliente' => TenantDeTeste::cdCliente(),
                 'ds_nome' => 'Atualiza Teste',
                 'ds_login' => 'teste.repo.atualiza',
                 'ds_senha' => 'hash-original',
@@ -94,7 +95,7 @@ class PessoaRepositoryTest extends TestCase
 
         $atualizada = $repository->atualizar(
             $pessoa->cd_pessoa,
-            1,
+            TenantDeTeste::cdCliente(),
             ['ds_nome' => 'Atualiza Teste Renomeado'],
             null,
             null
@@ -129,7 +130,7 @@ class PessoaRepositoryTest extends TestCase
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
         $pessoa = $repository->criar(
-            ['cd_cliente' => 1, 'ds_nome' => 'Isento Teste', 'ds_login' => 'teste.repo.isento', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Isento Teste', 'ds_login' => 'teste.repo.isento', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
             null,
             null
         );
@@ -142,7 +143,7 @@ class PessoaRepositoryTest extends TestCase
 
         $atualizada = $repository->atualizar(
             $pessoa->cd_pessoa,
-            1,
+            TenantDeTeste::cdCliente(),
             ['ds_nome' => 'Isento Teste Renomeado', 'sn_pessoa_juridica' => false],
             null,
             null,
@@ -160,17 +161,17 @@ class PessoaRepositoryTest extends TestCase
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
         $repository->criar(
-            ['cd_cliente' => 1, 'ds_nome' => 'Maria Fisica Teste', 'ds_login' => 'teste.repo.listar1', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Maria Fisica Teste', 'ds_login' => 'teste.repo.listar1', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
             ['ds_nome_oficial' => 'Maria Fisica Teste'],
             null
         );
         $repository->criar(
-            ['cd_cliente' => 1, 'ds_nome' => 'Empresa Juridica Teste', 'ds_login' => 'teste.repo.listar2', 'ds_senha' => 'x', 'sn_pessoa_juridica' => true],
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Empresa Juridica Teste', 'ds_login' => 'teste.repo.listar2', 'ds_senha' => 'x', 'sn_pessoa_juridica' => true],
             null,
             ['ds_cnpj' => '00000000000191', 'ds_nome_fantasia' => 'Empresa Juridica Teste']
         );
 
-        $resultado = $repository->listar(1, ['nome' => 'Teste', 'tipo_pessoa' => 'fisica'], 1, 20);
+        $resultado = $repository->listar(TenantDeTeste::cdCliente(), ['nome' => 'Teste', 'tipo_pessoa' => 'fisica'], 1, 20);
 
         $this->assertSame(1, $resultado['total']);
         $this->assertSame('Maria Fisica Teste', $resultado['itens']->first()->ds_nome);
@@ -185,14 +186,14 @@ class PessoaRepositoryTest extends TestCase
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
         $pessoa = $repository->criar(
-            ['cd_cliente' => 1, 'ds_nome' => 'Login Reciclado Teste', 'ds_login' => 'teste.repo.loginreciclado', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Login Reciclado Teste', 'ds_login' => 'teste.repo.loginreciclado', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
             ['ds_nome_oficial' => 'Login Reciclado Teste'],
             null
         );
 
-        $repository->excluir($pessoa->cd_pessoa, 1);
+        $repository->excluir($pessoa->cd_pessoa, TenantDeTeste::cdCliente());
 
-        $this->assertTrue($repository->loginExiste(1, 'teste.repo.loginreciclado'));
+        $this->assertTrue($repository->loginExiste(TenantDeTeste::cdCliente(), 'teste.repo.loginreciclado'));
     }
 
     public function testExcluirEhSoftDeleteNaoRemoveLinha()
@@ -200,13 +201,13 @@ class PessoaRepositoryTest extends TestCase
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
         $pessoa = $repository->criar(
-            ['cd_cliente' => 1, 'ds_nome' => 'Exclui Teste', 'ds_login' => 'teste.repo.excluir', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Exclui Teste', 'ds_login' => 'teste.repo.excluir', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
             ['ds_nome_oficial' => 'Exclui Teste'],
             null
         );
 
-        $this->assertTrue($repository->excluir($pessoa->cd_pessoa, 1));
-        $this->assertNull($repository->buscarPorId($pessoa->cd_pessoa, 1));
+        $this->assertTrue($repository->excluir($pessoa->cd_pessoa, TenantDeTeste::cdCliente()));
+        $this->assertNull($repository->buscarPorId($pessoa->cd_pessoa, TenantDeTeste::cdCliente()));
 
         $linhaCrua = Db::table('unim_pessoa')->where('cd_pessoa', $pessoa->cd_pessoa)->first();
         $this->assertNotNull($linhaCrua);

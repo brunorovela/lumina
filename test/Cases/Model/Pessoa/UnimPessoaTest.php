@@ -15,6 +15,7 @@ namespace HyperfTest\Cases\Model\Pessoa;
 use App\Model\Pessoa\UnimPessoa;
 use Hyperf\DbConnection\Db;
 use Hyperf\Testing\TestCase;
+use HyperfTest\Support\TenantDeTeste;
 
 /**
  * @internal
@@ -31,7 +32,7 @@ class UnimPessoaTest extends TestCase
     public function testSoftDeleteEsconqueLinhaSemApagar()
     {
         $pessoa = UnimPessoa::create([
-            'cd_cliente' => 1,
+            'cd_cliente' => TenantDeTeste::cdCliente(),
             'ds_nome' => 'Pessoa Teste Model',
             'ds_login' => 'teste.model.unimpessoa',
             'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
