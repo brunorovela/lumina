@@ -18,6 +18,13 @@ interface AuthRepositoryInterface
      * Busca a pessoa (não excluída) pelo par cd_cliente/ds_login. Devolve o registro cru
      * de unim_pessoa (stdClass) — quem decide o que fazer com ele (verificar senha, etc.)
      * é o Service, não o Repository.
+     *
+     * A forma declarada cobre só as colunas que o Service consome, já coeridas: o PDO pode
+     * devolver inteiro de MySQL como string dependendo da emulação de prepared statement, e
+     * ds_senha é nullable no schema legado (senha ausente vira '' e não casa com nenhum
+     * mecanismo, ou seja, credencial inválida).
+     *
+     * @return null|object{cd_pessoa: int, cd_cliente: int, ds_senha: string}
      */
     public function buscarPessoaAtivaPorLoginECliente(int $cdCliente, string $dsLogin): ?object;
 

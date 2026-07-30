@@ -1,13 +1,30 @@
 # Este é o template versionado. phpstan.neon (sem .dist) é gitignored e local a cada
-# checkout -- copie antes de rodar `composer analyse`:
+# checkout -- copie se quiser sobrepor algo localmente:
 #
 #     cp phpstan.neon.dist phpstan.neon
 #
-# (Finding 7, whole-branch review: sem este .dist, um clone limpo não tinha como
-# rodar `composer test`, já que phpstan.neon nunca foi commitado em formato nenhum.)
+# Não é obrigatório copiar: o phpstan descobre este .dist sozinho quando phpstan.neon
+# não existe, então `composer analyse` funciona num clone limpo.
+#
+# O NÍVEL VIVE AQUI, e só aqui. O script "analyse" do composer.json não passa -l de
+# propósito: quando passava, a flag sobrepunha este arquivo em silêncio e o nível
+# declarado no template versionado não valia nada.
 parameters:
-    level: 9
+    level: 10
     paths:
         - app
     bootstrapFiles:
         - phpstan-bootstrap.php
+    ignoreErrors:
+        # Gap de tipagem do vendor, não dívida nossa: forPage() não existe em
+        # Hyperf\Database\Model\Builder, chega até ele via `@mixin Query\Builder`. Nessa
+        # passagem o phpstan perde o TModel e passa a ver Collection<int, object> onde em
+        # runtime Model\Builder::__call devolve a si mesmo e get() entrega
+        # ModelCollection<int, UnimPessoa>. O @return do método é o tipo verdadeiro.
+        #
+        # count: 1 de propósito — se aparecer um segundo caso, o phpstan reclama e a decisão
+        # volta a ser tomada por alguém em vez de silenciada.
+        -
+            message: '#should return array\{itens: Hyperf\\Database\\Model\\Collection<int, App\\Model\\Pessoa\\UnimPessoa>, total: int\} but returns array\{itens: Hyperf\\Collection\\Collection<int, object>, total: int\}#'
+            path: app/Repository/Pessoa/PessoaRepository.php
+            count: 1

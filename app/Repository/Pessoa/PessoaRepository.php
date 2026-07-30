@@ -16,13 +16,24 @@ use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Model\Pessoa\UnimPessoa;
 use App\Model\Pessoa\UnimPessoaFisica;
 use App\Model\Pessoa\UnimPessoaJuridica;
+use App\Support\Tipo;
+use Hyperf\Database\Model\Collection;
 use Hyperf\DbConnection\Db;
+use RuntimeException;
 
 class PessoaRepository implements PessoaRepositoryInterface
 {
+    /**
+     * @param array<string, mixed> $dadosPessoa
+     * @param null|array<string, mixed> $dadosFisica
+     * @param null|array<string, mixed> $dadosJuridica
+     */
     public function criar(array $dadosPessoa, ?array $dadosFisica, ?array $dadosJuridica): UnimPessoa
     {
-        return Db::transaction(function () use ($dadosPessoa, $dadosFisica, $dadosJuridica) {
+        // Db::transaction() devolve mixed (repassa o que a closure retornar), e fresh()
+        // pode devolver null se a linha desaparecer no meio. O guard troca um TypeError
+        // opaco por erro explícito.
+        $pessoa = Db::transaction(function () use ($dadosPessoa, $dadosFisica, $dadosJuridica) {
             $pessoa = UnimPessoa::create($dadosPessoa);
 
             if ($dadosFisica !== null) {
@@ -35,8 +46,15 @@ class PessoaRepository implements PessoaRepositoryInterface
 
             return $pessoa->fresh(['fisica', 'juridica']);
         });
+
+        return self::garantirPessoa($pessoa);
     }
 
+    /**
+     * @param array<string, mixed> $dadosPessoa
+     * @param null|array<string, mixed> $dadosFisica
+     * @param null|array<string, mixed> $dadosJuridica
+     */
     public function atualizar(
         int $cdPessoa,
         int $cdCliente,
@@ -45,7 +63,7 @@ class PessoaRepository implements PessoaRepositoryInterface
         ?array $dadosJuridica,
         bool $ehIsentoDeFisicaJuridica = false
     ): UnimPessoa {
-        return Db::transaction(function () use (
+        $pessoaAtualizada = Db::transaction(function () use (
             $cdPessoa,
             $cdCliente,
             $dadosPessoa,
@@ -102,6 +120,8 @@ class PessoaRepository implements PessoaRepositoryInterface
 
             return $pessoa->fresh(['fisica', 'juridica']);
         });
+
+        return self::garantirPessoa($pessoaAtualizada);
     }
 
     public function buscarPorId(int $cdPessoa, int $cdCliente): ?UnimPessoa
@@ -112,12 +132,17 @@ class PessoaRepository implements PessoaRepositoryInterface
             ->first();
     }
 
+    /**
+     * @param array<string, mixed> $filtros
+     *
+     * @return array{itens: Collection<int, UnimPessoa>, total: int}
+     */
     public function listar(int $cdCliente, array $filtros, int $page, int $perPage): array
     {
         $query = UnimPessoa::with(['fisica', 'juridica'])->where('cd_cliente', $cdCliente);
 
         if (! empty($filtros['nome'])) {
-            $query->where('ds_nome', 'like', '%' . $filtros['nome'] . '%');
+            $query->where('ds_nome', 'like', '%' . Tipo::texto($filtros['nome']) . '%');
         }
 
         if (! empty($filtros['tipo_pessoa'])) {
@@ -156,5 +181,14 @@ class PessoaRepository implements PessoaRepositoryInterface
         }
 
         return $query->exists();
+    }
+
+    private static function garantirPessoa(mixed $pessoa): UnimPessoa
+    {
+        if (! $pessoa instanceof UnimPessoa) {
+            throw new RuntimeException('Transação de pessoa não devolveu o registro gravado.');
+        }
+
+        return $pessoa;
     }
 }

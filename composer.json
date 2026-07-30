@@ -80,7 +80,7 @@
         "php-unit": "co-phpunit --prepend test/bootstrap.php --colors=always",
         "cs-fix": "php-cs-fixer fix $1",
         "cs-check": "php-cs-fixer fix --dry-run --diff",
-        "analyse": "phpstan analyse --memory-limit 512M -l 0",
+        "analyse": "phpstan analyse --memory-limit 512M",
         "start": [
             "Composer\\Config::disableProcessTimeout",
             "php ./bin/hyperf.php start"

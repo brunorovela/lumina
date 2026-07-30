@@ -38,8 +38,11 @@ class AuthService
             throw new CredenciaisInvalidasException();
         }
 
+        $cdPessoa = $pessoa->cd_pessoa;
+        $cdClienteDaPessoa = $pessoa->cd_cliente;
+
         if ($mecanismo !== 'bcrypt') {
-            $this->authRepository->atualizarSenha($pessoa->cd_pessoa, password_hash($dsSenha, PASSWORD_BCRYPT));
+            $this->authRepository->atualizarSenha($cdPessoa, password_hash($dsSenha, PASSWORD_BCRYPT));
         }
 
         $token = bin2hex(random_bytes(32));
@@ -48,10 +51,10 @@ class AuthService
             $this->chaveSessao($token),
             self::TTL_SESSAO,
             json_encode([
-                'cd_pessoa' => $pessoa->cd_pessoa,
-                'cd_cliente' => $pessoa->cd_cliente,
-                'cd_perfis' => $this->authRepository->buscarPerfisDaPessoa($pessoa->cd_pessoa, $pessoa->cd_cliente),
-            ])
+                'cd_pessoa' => $cdPessoa,
+                'cd_cliente' => $cdClienteDaPessoa,
+                'cd_perfis' => $this->authRepository->buscarPerfisDaPessoa($cdPessoa, $cdClienteDaPessoa),
+            ], JSON_THROW_ON_ERROR)
         );
 
         return $token;
@@ -62,11 +65,32 @@ class AuthService
         $this->redis->del($this->chaveSessao($token));
     }
 
+    /**
+     * @return null|array<string, mixed>
+     */
     public function identidadePorToken(string $token): ?array
     {
         $bruto = $this->redis->get($this->chaveSessao($token));
 
-        return $bruto === false ? null : json_decode($bruto, true);
+        // Redis::get() devolve false quando a chave não existe, mas o tipo declarado é
+        // mixed — sem o is_string, json_decode() recebe mixed e o retorno também é mixed.
+        if (! is_string($bruto)) {
+            return null;
+        }
+
+        $identidade = json_decode($bruto, true);
+
+        if (! is_array($identidade)) {
+            return null;
+        }
+
+        $normalizada = [];
+
+        foreach ($identidade as $chave => $valor) {
+            $normalizada[(string) $chave] = $valor;
+        }
+
+        return $normalizada;
     }
 
     /**

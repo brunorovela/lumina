@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace App\Request\Pessoa;
 
+use Hyperf\Contract\ValidatorInterface;
 use Hyperf\Validation\Request\FormRequest;
 
 class PatchPessoaRequest extends FormRequest
@@ -21,6 +22,9 @@ class PatchPessoaRequest extends FormRequest
         return true;
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function rules(): array
     {
         return [
@@ -34,9 +38,9 @@ class PatchPessoaRequest extends FormRequest
         ];
     }
 
-    public function withValidator($validator): void
+    public function withValidator(ValidatorInterface $validator): void
     {
-        $validator->after(function ($validator) {
+        $validator->after(function (ValidatorInterface $validator) {
             if (empty($this->all())) {
                 $validator->errors()->add('payload', 'Envie ao menos um campo para atualizar.');
             }

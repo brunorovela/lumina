@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 namespace App\Repository\Auth;
 
+use App\Support\Tipo;
 use Hyperf\DbConnection\Db;
 
 /**
@@ -22,13 +23,33 @@ use Hyperf\DbConnection\Db;
  */
 class AuthRepository implements AuthRepositoryInterface
 {
+    /**
+     * @return null|object{cd_pessoa: int, cd_cliente: int, ds_senha: string}
+     */
     public function buscarPessoaAtivaPorLoginECliente(int $cdCliente, string $dsLogin): ?object
     {
-        return Db::table('unim_pessoa')
+        $linha = Db::table('unim_pessoa')
             ->where('cd_cliente', $cdCliente)
             ->where('ds_login', $dsLogin)
             ->whereNull('dt_excluido')
             ->first();
+
+        if ($linha === null) {
+            return null;
+        }
+
+        // A linha crua é stdClass sem tipo de propriedade, e o PDO pode devolver inteiro de
+        // MySQL como string dependendo da emulação de prepared statement. Montar aqui a
+        // forma que o Service consome (só estas três colunas) troca "acesso a propriedade
+        // em object" por contrato verificável — e faz cd_pessoa ser int de verdade, que é
+        // o que AuthRepositoryTest assume no assertSame.
+        $dados = (array) $linha;
+
+        return (object) [
+            'cd_pessoa' => Tipo::inteiro($dados['cd_pessoa'] ?? null),
+            'cd_cliente' => Tipo::inteiro($dados['cd_cliente'] ?? null),
+            'ds_senha' => Tipo::texto($dados['ds_senha'] ?? null),
+        ];
     }
 
     public function buscarPerfisDaPessoa(int $cdPessoa, int $cdCliente): array
@@ -39,7 +60,7 @@ class AuthRepository implements AuthRepositoryInterface
             ->where('uc.cd_cliente', $cdCliente)
             ->whereNull('uc.dt_excluido')
             ->pluck('lpp.cd_perfil')
-            ->map(fn ($cdPerfil) => (int) $cdPerfil)
+            ->map(fn (mixed $cdPerfil): int => Tipo::inteiro($cdPerfil))
             ->values()
             ->all();
     }

@@ -29,11 +29,17 @@ use Throwable;
  */
 class RouteExceptionHandler extends ExceptionHandler
 {
-    public function handle(Throwable $throwable, ResponseInterface $response)
+    public function handle(Throwable $throwable, ResponseInterface $response): ResponseInterface
     {
         $this->stopPropagation();
 
-        /* @var HttpException $throwable */
+        // instanceof em vez de anotação: o `/** @var */` original virou `/* @var */` na mão
+        // do php-cs-fixer, e nessa forma o phpstan não estreita o tipo — getName() e
+        // getStatusCode() ficavam "método inexistente em Throwable".
+        if (! $throwable instanceof HttpException) {
+            return ApiResponse::erroHttp($response, 500, 'Erro interno.');
+        }
+
         // NotFoundHttpException/MethodNotAllowedHttpException nascem sem mensagem (ex:
         // handleNotFound() em Hyperf\HttpServer\CoreMiddleware faz `throw new
         // NotFoundHttpException()`); getName() cai pro reason phrase HTTP do status

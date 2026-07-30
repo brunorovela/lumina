@@ -17,9 +17,17 @@ use Hyperf\Database\Model\Collection;
 
 interface PessoaRepositoryInterface
 {
+    /**
+     * @param array<string, mixed> $dadosPessoa
+     * @param null|array<string, mixed> $dadosFisica
+     * @param null|array<string, mixed> $dadosJuridica
+     */
     public function criar(array $dadosPessoa, ?array $dadosFisica, ?array $dadosJuridica): UnimPessoa;
 
     /**
+     * @param array<string, mixed> $dadosPessoa
+     * @param null|array<string, mixed> $dadosFisica
+     * @param null|array<string, mixed> $dadosJuridica
      * @param bool $ehIsentoDeFisicaJuridica login admin/administrador nunca tem
      *                                       fisica/juridica de propósito (regra de negócio, não "tipo que mudou") — quando
      *                                       true, o Repository nunca apaga fisica/juridica desta pessoa, independente do que
@@ -36,7 +44,11 @@ interface PessoaRepositoryInterface
 
     public function buscarPorId(int $cdPessoa, int $cdCliente): ?UnimPessoa;
 
-    /** @return array{itens: Collection, total: int} */
+    /**
+     * @param array<string, mixed> $filtros
+     *
+     * @return array{itens: Collection<int, UnimPessoa>, total: int}
+     */
     public function listar(int $cdCliente, array $filtros, int $page, int $perPage): array;
 
     public function excluir(int $cdPessoa, int $cdCliente): bool;

@@ -16,6 +16,9 @@ use App\Model\Pessoa\UnimPessoa;
 
 class PessoaResource
 {
+    /**
+     * @return array<string, mixed>
+     */
     public static function um(UnimPessoa $pessoa): array
     {
         return [
@@ -35,8 +38,19 @@ class PessoaResource
         ];
     }
 
+    /**
+     * @param iterable<UnimPessoa> $pessoas
+     *
+     * @return array<int, array<string, mixed>>
+     */
     public static function muitos(iterable $pessoas): array
     {
-        return array_map(static fn (UnimPessoa $pessoa) => self::um($pessoa), [...$pessoas]);
+        $itens = [];
+
+        foreach ($pessoas as $pessoa) {
+            $itens[] = self::um($pessoa);
+        }
+
+        return $itens;
     }
 }

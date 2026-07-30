@@ -21,6 +21,7 @@ use App\Resource\Pessoa\PessoaResource;
 use App\Service\Pessoa\PessoaService;
 use App\Support\ApiResponse;
 use App\Support\IdentidadeContext;
+use App\Support\Tipo;
 use Hyperf\Di\Annotation\Inject;
 use Hyperf\Swagger\Annotation as OA;
 use Psr\Http\Message\ResponseInterface;
@@ -55,7 +56,7 @@ class PessoaController extends AbstractController
     #[OA\Response(response: 422, description: 'Dados inválidos')]
     public function criar(CreatePessoaRequest $request): ResponseInterface
     {
-        $pessoa = $this->pessoaService->criar(IdentidadeContext::cdCliente(), $request->validated());
+        $pessoa = $this->pessoaService->criar(IdentidadeContext::cdCliente(), Tipo::mapa($request->validated()));
 
         return $this->response->json(ApiResponse::sucesso(PessoaResource::um($pessoa)))->withStatus(201);
     }
@@ -85,7 +86,7 @@ class PessoaController extends AbstractController
     #[OA\Response(response: 422, description: 'Dados inválidos')]
     public function atualizar(int $id, UpdatePessoaRequest $request): ResponseInterface
     {
-        $pessoa = $this->pessoaService->atualizar($id, IdentidadeContext::cdCliente(), $request->validated());
+        $pessoa = $this->pessoaService->atualizar($id, IdentidadeContext::cdCliente(), Tipo::mapa($request->validated()));
 
         return $this->response->json(ApiResponse::sucesso(PessoaResource::um($pessoa)));
     }
@@ -113,7 +114,7 @@ class PessoaController extends AbstractController
     #[OA\Response(response: 422, description: 'Dados inválidos (ou nenhum campo enviado)')]
     public function atualizarParcial(int $id, PatchPessoaRequest $request): ResponseInterface
     {
-        $pessoa = $this->pessoaService->atualizarParcial($id, IdentidadeContext::cdCliente(), $request->validated());
+        $pessoa = $this->pessoaService->atualizarParcial($id, IdentidadeContext::cdCliente(), Tipo::mapa($request->validated()));
 
         return $this->response->json(ApiResponse::sucesso(PessoaResource::um($pessoa)));
     }
@@ -142,9 +143,9 @@ class PessoaController extends AbstractController
     #[OA\Response(response: 422, description: 'Dados inválidos')]
     public function listar(ListPessoaRequest $request): ResponseInterface
     {
-        $filtros = array_intersect_key($request->validated(), array_flip(['nome', 'tipo_pessoa']));
-        $page = (int) ($request->validated()['page'] ?? 1);
-        $perPage = (int) ($request->validated()['per_page'] ?? 20);
+        $filtros = array_intersect_key(Tipo::mapa($request->validated()), array_flip(['nome', 'tipo_pessoa']));
+        $page = Tipo::inteiro($request->validated()['page'] ?? null, 1);
+        $perPage = Tipo::inteiro($request->validated()['per_page'] ?? null, 20);
 
         $resultado = $this->pessoaService->listar(IdentidadeContext::cdCliente(), $filtros, $page, $perPage);
 

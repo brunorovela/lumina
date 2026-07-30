@@ -16,6 +16,7 @@ use App\Exception\Pessoa\LoginJaExisteException;
 use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Model\Pessoa\UnimPessoa;
 use App\Repository\Pessoa\PessoaRepositoryInterface;
+use App\Support\Tipo;
 use Hyperf\Database\Model\Collection;
 
 class PessoaService
@@ -26,9 +27,12 @@ class PessoaService
     {
     }
 
+    /**
+     * @param array<string, mixed> $dados
+     */
     public function criar(int $cdCliente, array $dados): UnimPessoa
     {
-        if ($this->pessoaRepository->loginExiste($cdCliente, $dados['ds_login'])) {
+        if ($this->pessoaRepository->loginExiste($cdCliente, Tipo::texto($dados['ds_login'] ?? null))) {
             throw new LoginJaExisteException();
         }
 
@@ -37,9 +41,14 @@ class PessoaService
         return $this->pessoaRepository->criar($dadosPessoa, $dadosFisica, $dadosJuridica);
     }
 
+    /**
+     * @param array<string, mixed> $dados
+     */
     public function atualizar(int $cdPessoa, int $cdCliente, array $dados): UnimPessoa
     {
-        $this->garantirLoginDisponivel($cdPessoa, $cdCliente, $dados['ds_login']);
+        $dsLogin = Tipo::texto($dados['ds_login'] ?? null);
+
+        $this->garantirLoginDisponivel($cdPessoa, $cdCliente, $dsLogin);
 
         [$dadosPessoa, $dadosFisica, $dadosJuridica] = $this->separarDados($cdCliente, $dados);
 
@@ -50,7 +59,7 @@ class PessoaService
         // real encontrada em re-review: sem esse sinal, um PUT válido numa pessoa isenta
         // que tivesse fisica/juridica órfã por dado legado (cd_pessoa=1/2, cd_cliente=23,
         // confirmado contra o banco real) apagava essa linha.
-        $ehIsentoDeFisicaJuridica = $this->ehIsentoDeFisicaJuridica($dados['ds_login']);
+        $ehIsentoDeFisicaJuridica = $this->ehIsentoDeFisicaJuridica($dsLogin);
 
         return $this->pessoaRepository->atualizar(
             $cdPessoa,
@@ -62,10 +71,13 @@ class PessoaService
         );
     }
 
+    /**
+     * @param array<string, mixed> $dados
+     */
     public function atualizarParcial(int $cdPessoa, int $cdCliente, array $dados): UnimPessoa
     {
         if (isset($dados['ds_login'])) {
-            $this->garantirLoginDisponivel($cdPessoa, $cdCliente, $dados['ds_login']);
+            $this->garantirLoginDisponivel($cdPessoa, $cdCliente, Tipo::texto($dados['ds_login']));
         }
 
         // PATCH não muda o tipo pessoa (física/jurídica) — precisa saber o tipo REAL já
@@ -78,7 +90,7 @@ class PessoaService
         $dadosPessoa = array_intersect_key($dados, array_flip(['ds_nome', 'ds_login', 'ds_senha']));
 
         if (isset($dadosPessoa['ds_senha'])) {
-            $dadosPessoa['ds_senha'] = password_hash($dadosPessoa['ds_senha'], PASSWORD_BCRYPT);
+            $dadosPessoa['ds_senha'] = password_hash(Tipo::texto($dadosPessoa['ds_senha']), PASSWORD_BCRYPT);
         }
 
         // Campos do tipo que a pessoa NÃO é são ignorados silenciosamente, mesmo que
@@ -112,7 +124,9 @@ class PessoaService
     }
 
     /**
-     * @return array{itens: Collection, total: int, per_page: int}
+     * @param array<string, mixed> $filtros
+     *
+     * @return array{itens: Collection<int, UnimPessoa>, total: int, per_page: int}
      */
     public function listar(int $cdCliente, array $filtros, int $page, int $perPage): array
     {
@@ -146,20 +160,27 @@ class PessoaService
         return in_array(strtolower($dsLogin), self::LOGINS_ISENTOS_DE_FISICA_JURIDICA, true);
     }
 
+    /**
+     * @param array<string, mixed> $dados
+     *
+     * @return array{0: array<string, mixed>, 1: null|array<string, mixed>, 2: null|array<string, mixed>}
+     */
     private function separarDados(int $cdCliente, array $dados): array
     {
+        $dsLogin = Tipo::texto($dados['ds_login'] ?? null);
+
         $dadosPessoa = [
             'cd_cliente' => $cdCliente,
             'ds_nome' => $dados['ds_nome'],
-            'ds_login' => $dados['ds_login'],
+            'ds_login' => $dsLogin,
             'sn_pessoa_juridica' => $dados['sn_pessoa_juridica'],
         ];
 
         if (isset($dados['ds_senha'])) {
-            $dadosPessoa['ds_senha'] = password_hash($dados['ds_senha'], PASSWORD_BCRYPT);
+            $dadosPessoa['ds_senha'] = password_hash(Tipo::texto($dados['ds_senha']), PASSWORD_BCRYPT);
         }
 
-        if ($this->ehIsentoDeFisicaJuridica($dados['ds_login'])) {
+        if ($this->ehIsentoDeFisicaJuridica($dsLogin)) {
             return [$dadosPessoa, null, null];
         }
 

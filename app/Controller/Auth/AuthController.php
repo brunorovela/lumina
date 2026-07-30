@@ -16,6 +16,7 @@ use App\Controller\AbstractController;
 use App\Request\Auth\LoginRequest;
 use App\Service\Auth\AuthService;
 use App\Support\ApiResponse;
+use App\Support\Tipo;
 use Hyperf\Di\Annotation\Inject;
 use Hyperf\Swagger\Annotation as OA;
 use Psr\Http\Message\ResponseInterface;
@@ -43,9 +44,15 @@ class AuthController extends AbstractController
     #[OA\Response(response: 422, description: 'Dados inválidos')]
     public function login(LoginRequest $request): ResponseInterface
     {
-        $dados = $request->validated();
+        $dados = Tipo::mapa($request->validated());
 
-        $token = $this->authService->autenticar($dados['cd_cliente'], $dados['ds_login'], $dados['ds_senha']);
+        // validated() devolve array<string, mixed> mesmo com as regras garantindo
+        // integer/string; a coerção explícita é o que torna isso verificável.
+        $token = $this->authService->autenticar(
+            Tipo::inteiro($dados['cd_cliente'] ?? null),
+            Tipo::texto($dados['ds_login'] ?? null),
+            Tipo::texto($dados['ds_senha'] ?? null)
+        );
 
         return $this->response->json(ApiResponse::sucesso(['token' => $token]));
     }
