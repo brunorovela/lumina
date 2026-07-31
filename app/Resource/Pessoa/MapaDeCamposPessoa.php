@@ -28,16 +28,21 @@ final class MapaDeCamposPessoa
     public const CHAVE_LOCAL = 'cd_pessoa';
 
     /**
+     * MANUTENÇÃO: campo novo aqui também precisa entrar na descrição do #[OA\Parameter(name: 'fields')]
+     * dos DOIS endpoints de leitura em App\Controller\Pessoa\PessoaController (listar e buscar) —
+     * atributo PHP exige expressão constante, então a lista de campos do Swagger não pode ser
+     * derivada deste mapa e nada força as duas a acompanharem.
+     *
      * @return array<string, Campo>
      */
     public static function mapa(): array
     {
         return [
             'cd_pessoa' => Campo::coluna('cd_pessoa', noPadrao: true),
+            'cd_cliente' => Campo::coluna('cd_cliente'),
             'ds_nome' => Campo::coluna('ds_nome', noPadrao: true),
             'ds_login' => Campo::coluna('ds_login', noPadrao: true),
             'sn_pessoa_juridica' => Campo::coluna('sn_pessoa_juridica', noPadrao: true),
-            'cd_cliente' => Campo::coluna('cd_cliente'),
             'fisica.ds_nome_oficial' => Campo::relacao('fisica', 'ds_nome_oficial', self::CHAVE_LOCAL),
             'fisica.ds_cpf' => Campo::relacao('fisica', 'ds_cpf', self::CHAVE_LOCAL),
             'juridica.ds_cnpj' => Campo::relacao('juridica', 'ds_cnpj', self::CHAVE_LOCAL),

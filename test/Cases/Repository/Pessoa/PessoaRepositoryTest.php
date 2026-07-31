@@ -230,6 +230,7 @@ class PessoaRepositoryTest extends TestCase
 
         $this->assertNotNull($pessoa);
         $this->assertTrue($pessoa->relationLoaded('fisica'));
+        $this->assertNotNull($pessoa->fisica, 'fisica veio null no caminho default: chave estrangeira ausente no eager load.');
     }
 
     /**

@@ -14,6 +14,7 @@ namespace HyperfTest\Cases\Support\Campos;
 
 use App\Support\Campos\Campo;
 use App\Support\Campos\SelecaoDeCampos;
+use LogicException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -106,6 +107,29 @@ class SelecaoDeCamposTest extends TestCase
 
         $this->assertTrue($selecao->inclui('ds_nome'));
         $this->assertFalse($selecao->inclui('cd_cliente'));
+    }
+
+    /**
+     * Guard de defesa: um mapa sem nenhum campo noPadrao faz o caminho DEFAULT (sem
+     * `fields`) cair numa seleção sem colunas — select([]) geraria SQL inválido
+     * ("select  from"). Isto é inalcançável por HTTP (a validação barra token desconhecido
+     * antes), mas SelecaoDeCampos é reutilizável por outras Resources, e uma que esqueça o
+     * noPadrao em todo o mapa cairia num 500 sem pista da causa se não fosse este guard.
+     */
+    public function testColunasComSelecaoSemNenhumCampoNoPadraoLancaLogicException()
+    {
+        $mapaSemPadrao = [
+            'ds_nome' => Campo::coluna('ds_nome'),
+            'cd_cliente' => Campo::coluna('cd_cliente'),
+        ];
+
+        $selecao = SelecaoDeCampos::de(null, $mapaSemPadrao, 'cd_pessoa');
+
+        $this->assertSame([], $selecao->campos(), 'pré-condição: default sem noPadrao é vazio.');
+
+        $this->expectException(LogicException::class);
+
+        $selecao->colunas();
     }
 
     /**

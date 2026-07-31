@@ -123,7 +123,16 @@ final class SelecaoDeCampos
             $colunas[$this->chaveLocal] = true;
         }
 
-        return array_keys($colunas);
+        $colunas = array_keys($colunas);
+
+        if ($colunas === []) {
+            throw new LogicException(
+                'Seleção de campos vazia: select([]) geraria SQL inválido ("select  from"). '
+                . 'Ou o mapa não tem nenhum campo marcado noPadrao, ou a validação de fields não rodou antes.'
+            );
+        }
+
+        return $colunas;
     }
 
     /**

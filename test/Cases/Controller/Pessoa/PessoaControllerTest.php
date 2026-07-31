@@ -199,15 +199,18 @@ class PessoaControllerTest extends TestCase
 
     public function testListaSemFieldsDevolveApenasOConjuntoEnxuto()
     {
+        // O tenant de teste é compartilhado pela suíte inteira (TenantDeTeste::limpar() só
+        // roda no início/fim, não por teste), e PessoaRepositoryTest cria uma "Selecao
+        // Enxuta" — filtrar por "Enxuta" casaria as duas. O termo aqui precisa ser único.
         $this->json('/pessoas', [
-            'ds_nome' => 'Http Enxuta',
+            'ds_nome' => 'Http Enxuta Unica',
             'ds_login' => 'teste.http.enxuta',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
             'ds_nome_oficial' => 'Http Enxuta Oficial',
         ], $this->headers())->assertStatus(201);
 
-        $listar = $this->get('/pessoas?nome=Enxuta', [], $this->headers());
+        $listar = $this->get('/pessoas?nome=Enxuta Unica', [], $this->headers());
 
         $listar->assertStatus(200);
         $item = $listar->json('data.0');
@@ -222,15 +225,17 @@ class PessoaControllerTest extends TestCase
 
     public function testListaComFieldsAsteriscoMantemOContratoAntigo()
     {
+        // Termo de filtro único: o tenant de teste é compartilhado pela suíte inteira, então
+        // um filtro genérico correria o risco de casar pessoa criada por outro teste.
         $this->json('/pessoas', [
-            'ds_nome' => 'Http Completa',
+            'ds_nome' => 'Http Completa Unica',
             'ds_login' => 'teste.http.completa',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
             'ds_nome_oficial' => 'Http Completa Oficial',
         ], $this->headers())->assertStatus(201);
 
-        $item = $this->get('/pessoas?nome=Completa&fields=*', [], $this->headers())->json('data.0');
+        $item = $this->get('/pessoas?nome=Completa Unica&fields=*', [], $this->headers())->json('data.0');
 
         $this->assertEqualsCanonicalizing(
             ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica', 'fisica', 'juridica'],
@@ -241,8 +246,10 @@ class PessoaControllerTest extends TestCase
 
     public function testListaComFieldsDeRelacaoDevolveAninhadoSemVazarChaveDeJoin()
     {
+        // Termo de filtro único: o tenant de teste é compartilhado pela suíte inteira, então
+        // um filtro genérico correria o risco de casar pessoa criada por outro teste.
         $this->json('/pessoas', [
-            'ds_nome' => 'Http Relacao',
+            'ds_nome' => 'Http Relacao Unica',
             'ds_login' => 'teste.http.relacao',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
@@ -250,15 +257,17 @@ class PessoaControllerTest extends TestCase
             'ds_cpf' => '99988877766',
         ], $this->headers())->assertStatus(201);
 
-        $item = $this->get('/pessoas?nome=Relacao&fields=ds_nome,fisica.ds_cpf', [], $this->headers())->json('data.0');
+        $item = $this->get('/pessoas?nome=Relacao Unica&fields=ds_nome,fisica.ds_cpf', [], $this->headers())->json('data.0');
 
-        $this->assertSame(['ds_nome' => 'Http Relacao', 'fisica' => ['ds_cpf' => '99988877766']], $item);
+        $this->assertSame(['ds_nome' => 'Http Relacao Unica', 'fisica' => ['ds_cpf' => '99988877766']], $item);
     }
 
     public function testListaComRelacaoPedidaEmPessoaDoOutroTipoDevolveNulo()
     {
+        // Termo de filtro único: o tenant de teste é compartilhado pela suíte inteira, então
+        // um filtro genérico correria o risco de casar pessoa criada por outro teste.
         $this->json('/pessoas', [
-            'ds_nome' => 'Http Juridica Selecao',
+            'ds_nome' => 'Http Juridica Selecao Unica',
             'ds_login' => 'teste.http.juridicasel',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => true,
@@ -266,7 +275,7 @@ class PessoaControllerTest extends TestCase
             'ds_nome_fantasia' => 'Http Juridica Fantasia',
         ], $this->headers())->assertStatus(201);
 
-        $item = $this->get('/pessoas?nome=Juridica Selecao&fields=ds_nome,fisica.ds_cpf', [], $this->headers())->json('data.0');
+        $item = $this->get('/pessoas?nome=Juridica Selecao Unica&fields=ds_nome,fisica.ds_cpf', [], $this->headers())->json('data.0');
 
         $this->assertArrayHasKey('fisica', $item);
         $this->assertNull($item['fisica']);
@@ -279,6 +288,14 @@ class PessoaControllerTest extends TestCase
         $listar->assertStatus(200);
         $this->assertSame(10, $listar->json('meta.per_page'));
         $this->assertIsInt($listar->json('meta.total'));
+
+        // A invariante real: o SELECT parcial não pode afetar o count() usado no total da
+        // paginação. assertIsInt acima passaria com qualquer inteiro, inclusive um total
+        // errado -- aqui comparamos o total do contrato completo com o do enxuto.
+        $totalCompleto = $this->get('/pessoas?fields=*', [], $this->headers())->json('meta.total');
+        $totalEnxuto = $this->get('/pessoas?fields=ds_nome', [], $this->headers())->json('meta.total');
+
+        $this->assertSame($totalCompleto, $totalEnxuto);
     }
 
     public function testSemTokenRetorna401()
@@ -449,6 +466,7 @@ class PessoaControllerTest extends TestCase
             ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica', 'fisica', 'juridica'],
             array_keys($item)
         );
+        $this->assertSame('Http Detalhe Oficial', $item['fisica']['ds_nome_oficial']);
     }
 
     public function testDetalheComFieldsRecorta()
@@ -501,7 +519,20 @@ class PessoaControllerTest extends TestCase
         $patch = $this->patch("/pessoas/{$cdPessoa}?fields=ds_nome", ['ds_nome' => 'Http Escrita Fields Dois'], $this->headers());
 
         $patch->assertStatus(200);
-        $this->assertArrayHasKey('fisica', $patch->json('data'));
+        $this->assertEqualsCanonicalizing(
+            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica', 'fisica', 'juridica'],
+            array_keys($patch->json('data'))
+        );
+    }
+
+    /**
+     * A ordem Auth/Acl antes de Validation vale também na rota do detalhe, que ganhou
+     * ValidationMiddleware junto com o ?fields=: sem token, o cliente recebe 401 e não
+     * descobre nada sobre os campos aceitos.
+     */
+    public function testDetalheSemTokenEComFieldsInvalidoRetorna401NaoMais422()
+    {
+        $this->get('/pessoas/1?fields=ds_senha')->assertStatus(401);
     }
 
     private function headers(): array

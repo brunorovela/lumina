@@ -164,7 +164,11 @@ class PessoaRepository implements PessoaRepositoryInterface
         }
 
         $total = (clone $query)->count();
-        $itens = $query->forPage($page, $perPage)->get();
+
+        // Ordem-base determinística: sem ORDER BY a ordem vem do plano de acesso, que muda
+        // com as colunas projetadas — dois clientes paginando com `fields` diferentes veriam
+        // ordens diferentes, e LIMIT/OFFSET sem ordem total pode repetir ou pular linha.
+        $itens = $query->orderBy('cd_pessoa')->forPage($page, $perPage)->get();
 
         return ['itens' => $itens, 'total' => $total];
     }
