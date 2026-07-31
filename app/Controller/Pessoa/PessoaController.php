@@ -17,6 +17,7 @@ use App\Request\Pessoa\CreatePessoaRequest;
 use App\Request\Pessoa\ListPessoaRequest;
 use App\Request\Pessoa\PatchPessoaRequest;
 use App\Request\Pessoa\UpdatePessoaRequest;
+use App\Resource\Pessoa\MapaDeCamposPessoa;
 use App\Resource\Pessoa\PessoaResource;
 use App\Service\Pessoa\PessoaService;
 use App\Support\ApiResponse;
@@ -137,20 +138,33 @@ class PessoaController extends AbstractController
     #[OA\Parameter(name: 'per_page', in: 'query', schema: new OA\Schema(type: 'integer', default: 20, maximum: 100))]
     #[OA\Parameter(name: 'nome', in: 'query', schema: new OA\Schema(type: 'string'))]
     #[OA\Parameter(name: 'tipo_pessoa', in: 'query', schema: new OA\Schema(type: 'string', enum: ['fisica', 'juridica']))]
+    #[OA\Parameter(
+        name: 'fields',
+        in: 'query',
+        description: 'Campos a devolver, separados por vírgula. Campo de relação usa ponto (fisica.ds_cpf), e relação inteira usa curinga (fisica.*). `fields=*` devolve tudo. '
+            . 'ATENÇÃO: sem este parâmetro a LISTA devolve apenas cd_pessoa, ds_nome, ds_login e sn_pessoa_juridica — diferente de GET /pessoas/{id}, que devolve o registro completo. '
+            . 'Campos disponíveis: cd_pessoa, cd_cliente, ds_nome, ds_login, sn_pessoa_juridica, fisica.ds_nome_oficial, fisica.ds_cpf, juridica.ds_cnpj, juridica.ds_nome_fantasia.',
+        schema: new OA\Schema(type: 'string', example: 'ds_nome,fisica.ds_cpf')
+    )]
     #[OA\Response(response: 200, description: 'Lista paginada de pessoas')]
     #[OA\Response(response: 401, description: 'Não autenticado')]
     #[OA\Response(response: 403, description: 'Sem permissão')]
     #[OA\Response(response: 422, description: 'Dados inválidos')]
     public function listar(ListPessoaRequest $request): ResponseInterface
     {
-        $filtros = array_intersect_key(Tipo::mapa($request->validated()), array_flip(['nome', 'tipo_pessoa']));
-        $page = Tipo::inteiro($request->validated()['page'] ?? null, 1);
-        $perPage = Tipo::inteiro($request->validated()['per_page'] ?? null, 20);
+        $validado = Tipo::mapa($request->validated());
 
-        $resultado = $this->pessoaService->listar(IdentidadeContext::cdCliente(), $filtros, $page, $perPage);
+        $filtros = array_intersect_key($validado, array_flip(['nome', 'tipo_pessoa']));
+        $page = Tipo::inteiro($validado['page'] ?? null, 1);
+        $perPage = Tipo::inteiro($validado['per_page'] ?? null, 20);
+
+        $fields = $validado['fields'] ?? null;
+        $selecao = MapaDeCamposPessoa::selecao(is_string($fields) ? $fields : null);
+
+        $resultado = $this->pessoaService->listar(IdentidadeContext::cdCliente(), $filtros, $page, $perPage, $selecao);
 
         return $this->response->json(ApiResponse::sucesso(
-            PessoaResource::muitos($resultado['itens']),
+            PessoaResource::muitos($resultado['itens'], $selecao),
             [
                 'total' => $resultado['total'],
                 'per_page' => $resultado['per_page'],

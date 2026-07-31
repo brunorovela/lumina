@@ -197,6 +197,90 @@ class PessoaControllerTest extends TestCase
         $this->assertSame(100, $listar->json('meta.per_page'));
     }
 
+    public function testListaSemFieldsDevolveApenasOConjuntoEnxuto()
+    {
+        $this->json('/pessoas', [
+            'ds_nome' => 'Http Enxuta',
+            'ds_login' => 'teste.http.enxuta',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Enxuta Oficial',
+        ], $this->headers())->assertStatus(201);
+
+        $listar = $this->get('/pessoas?nome=Enxuta', [], $this->headers());
+
+        $listar->assertStatus(200);
+        $item = $listar->json('data.0');
+
+        $this->assertEqualsCanonicalizing(
+            ['cd_pessoa', 'ds_nome', 'ds_login', 'sn_pessoa_juridica'],
+            array_keys($item)
+        );
+        $this->assertArrayNotHasKey('fisica', $item);
+        $this->assertArrayNotHasKey('cd_cliente', $item);
+    }
+
+    public function testListaComFieldsAsteriscoMantemOContratoAntigo()
+    {
+        $this->json('/pessoas', [
+            'ds_nome' => 'Http Completa',
+            'ds_login' => 'teste.http.completa',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Completa Oficial',
+        ], $this->headers())->assertStatus(201);
+
+        $item = $this->get('/pessoas?nome=Completa&fields=*', [], $this->headers())->json('data.0');
+
+        $this->assertEqualsCanonicalizing(
+            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica', 'fisica', 'juridica'],
+            array_keys($item)
+        );
+        $this->assertSame('Http Completa Oficial', $item['fisica']['ds_nome_oficial']);
+    }
+
+    public function testListaComFieldsDeRelacaoDevolveAninhadoSemVazarChaveDeJoin()
+    {
+        $this->json('/pessoas', [
+            'ds_nome' => 'Http Relacao',
+            'ds_login' => 'teste.http.relacao',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Relacao Oficial',
+            'ds_cpf' => '99988877766',
+        ], $this->headers())->assertStatus(201);
+
+        $item = $this->get('/pessoas?nome=Relacao&fields=ds_nome,fisica.ds_cpf', [], $this->headers())->json('data.0');
+
+        $this->assertSame(['ds_nome' => 'Http Relacao', 'fisica' => ['ds_cpf' => '99988877766']], $item);
+    }
+
+    public function testListaComRelacaoPedidaEmPessoaDoOutroTipoDevolveNulo()
+    {
+        $this->json('/pessoas', [
+            'ds_nome' => 'Http Juridica Selecao',
+            'ds_login' => 'teste.http.juridicasel',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => true,
+            'ds_cnpj' => '00000000000191',
+            'ds_nome_fantasia' => 'Http Juridica Fantasia',
+        ], $this->headers())->assertStatus(201);
+
+        $item = $this->get('/pessoas?nome=Juridica Selecao&fields=ds_nome,fisica.ds_cpf', [], $this->headers())->json('data.0');
+
+        $this->assertArrayHasKey('fisica', $item);
+        $this->assertNull($item['fisica']);
+    }
+
+    public function testMetaDaPaginacaoNaoMudaComFields()
+    {
+        $listar = $this->get('/pessoas?fields=ds_nome&per_page=10', [], $this->headers());
+
+        $listar->assertStatus(200);
+        $this->assertSame(10, $listar->json('meta.per_page'));
+        $this->assertIsInt($listar->json('meta.total'));
+    }
+
     public function testSemTokenRetorna401()
     {
         $this->get('/pessoas')->assertStatus(401);

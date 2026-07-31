@@ -16,6 +16,7 @@ use App\Exception\Pessoa\LoginJaExisteException;
 use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Model\Pessoa\UnimPessoa;
 use App\Repository\Pessoa\PessoaRepositoryInterface;
+use App\Support\Campos\SelecaoDeCampos;
 use App\Support\Tipo;
 use Hyperf\Database\Model\Collection;
 
@@ -125,10 +126,13 @@ class PessoaService
 
     /**
      * @param array<string, mixed> $filtros
+     * @param null|SelecaoDeCampos $selecao repassada intacta ao Repository — o Service não
+     *                                      decide nada sobre seleção de campos, quem define
+     *                                      o default por endpoint é o Controller
      *
      * @return array{itens: Collection<int, UnimPessoa>, total: int, per_page: int}
      */
-    public function listar(int $cdCliente, array $filtros, int $page, int $perPage): array
+    public function listar(int $cdCliente, array $filtros, int $page, int $perPage, ?SelecaoDeCampos $selecao = null): array
     {
         // O per_page EFETIVO (clampado) precisa voltar pro Controller montar o `meta` --
         // senão meta.per_page/last_page mentem quando o cliente pede per_page > 100
@@ -136,7 +140,7 @@ class PessoaService
         // request pro meta, mas a paginação de fato rodava com o clampado).
         $perPage = min($perPage, 100);
 
-        $resultado = $this->pessoaRepository->listar($cdCliente, $filtros, $page, $perPage);
+        $resultado = $this->pessoaRepository->listar($cdCliente, $filtros, $page, $perPage, $selecao);
 
         return [...$resultado, 'per_page' => $perPage];
     }
