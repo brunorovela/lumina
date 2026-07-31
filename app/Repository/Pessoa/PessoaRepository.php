@@ -16,8 +16,14 @@ use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Model\Pessoa\UnimPessoa;
 use App\Model\Pessoa\UnimPessoaFisica;
 use App\Model\Pessoa\UnimPessoaJuridica;
+use App\Resource\Pessoa\MapaDeCamposPessoa;
+use App\Support\Campos\SelecaoDeCampos;
 use App\Support\Tipo;
+use Closure;
+use Hyperf\Database\Model\Builder;
 use Hyperf\Database\Model\Collection;
+use Hyperf\Database\Model\Model;
+use Hyperf\Database\Model\Relations\Relation;
 use Hyperf\DbConnection\Db;
 use RuntimeException;
 
@@ -124,9 +130,14 @@ class PessoaRepository implements PessoaRepositoryInterface
         return self::garantirPessoa($pessoaAtualizada);
     }
 
-    public function buscarPorId(int $cdPessoa, int $cdCliente): ?UnimPessoa
+    /**
+     * @param null|SelecaoDeCampos $selecao null significa contrato completo
+     */
+    public function buscarPorId(int $cdPessoa, int $cdCliente, ?SelecaoDeCampos $selecao = null): ?UnimPessoa
     {
-        return UnimPessoa::with(['fisica', 'juridica'])
+        $selecao ??= MapaDeCamposPessoa::selecao(null, padraoEhTudo: true);
+
+        return self::consulta($selecao)
             ->where('cd_pessoa', $cdPessoa)
             ->where('cd_cliente', $cdCliente)
             ->first();
@@ -134,12 +145,15 @@ class PessoaRepository implements PessoaRepositoryInterface
 
     /**
      * @param array<string, mixed> $filtros
+     * @param null|SelecaoDeCampos $selecao null significa contrato completo
      *
      * @return array{itens: Collection<int, UnimPessoa>, total: int}
      */
-    public function listar(int $cdCliente, array $filtros, int $page, int $perPage): array
+    public function listar(int $cdCliente, array $filtros, int $page, int $perPage, ?SelecaoDeCampos $selecao = null): array
     {
-        $query = UnimPessoa::with(['fisica', 'juridica'])->where('cd_cliente', $cdCliente);
+        $selecao ??= MapaDeCamposPessoa::selecao(null, padraoEhTudo: true);
+
+        $query = self::consulta($selecao)->where('cd_cliente', $cdCliente);
 
         if (! empty($filtros['nome'])) {
             $query->where('ds_nome', 'like', '%' . Tipo::texto($filtros['nome']) . '%');
@@ -190,5 +204,46 @@ class PessoaRepository implements PessoaRepositoryInterface
         }
 
         return $pessoa;
+    }
+
+    /**
+     * Monta a consulta com o SELECT parcial e só as relações pedidas. É o ponto onde a
+     * seleção deixa de ser contrato de API e passa a ser SQL.
+     *
+     * @return Builder<UnimPessoa>
+     */
+    private static function consulta(SelecaoDeCampos $selecao): Builder
+    {
+        $query = UnimPessoa::query();
+
+        foreach ($selecao->relacoes() as $relacao => $colunas) {
+            $query->with([$relacao => self::selecionar($colunas)]);
+        }
+
+        // select() só existe em Query\Builder e chega ao Model\Builder via @mixin (mesmo
+        // gap de tipagem do forPage() já documentado no ignoreErrors do phpstan.neon.dist):
+        // encadear a chamada faria o phpstan inferir o retorno como Query\Builder. Chamar e
+        // devolver $query separadamente preserva o Builder<UnimPessoa> que
+        // UnimPessoa::query() já garante.
+        $query->select($selecao->colunas());
+
+        return $query;
+    }
+
+    /**
+     * O callback do with() recebe a Relation (ex.: HasOne), não o Builder: o Eloquent
+     * chama $constraints($relation) em eagerLoadRelation(). Tipar o parâmetro como Builder
+     * derruba em runtime com TypeError — Relation não é um Builder, apenas repassa select()
+     * a ele via @mixin/__call.
+     *
+     * @param string[] $colunas
+     *
+     * @return Closure(Relation<Model, Model, mixed>): void
+     */
+    private static function selecionar(array $colunas): Closure
+    {
+        return static function (Relation $consulta) use ($colunas): void {
+            $consulta->select($colunas);
+        };
     }
 }

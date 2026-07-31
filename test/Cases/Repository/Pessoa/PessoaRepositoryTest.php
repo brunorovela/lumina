@@ -14,6 +14,7 @@ namespace HyperfTest\Cases\Repository\Pessoa;
 
 use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Repository\Pessoa\PessoaRepositoryInterface;
+use App\Resource\Pessoa\MapaDeCamposPessoa;
 use Hyperf\DbConnection\Db;
 use Hyperf\Testing\TestCase;
 use HyperfTest\Support\TenantDeTeste;
@@ -212,5 +213,107 @@ class PessoaRepositoryTest extends TestCase
         $linhaCrua = Db::table('unim_pessoa')->where('cd_pessoa', $pessoa->cd_pessoa)->first();
         $this->assertNotNull($linhaCrua);
         $this->assertNotNull($linhaCrua->dt_excluido);
+    }
+
+    public function testListarSemSelecaoMantemOContratoCompleto()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $repository->criar(
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Selecao Padrao', 'ds_login' => 'teste.repo.selpadrao', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['ds_nome_oficial' => 'Selecao Padrao Oficial', 'ds_cpf' => '111'],
+            null
+        );
+
+        $resultado = $repository->listar(TenantDeTeste::cdCliente(), [], 1, 20);
+        $pessoa = $resultado['itens']->first();
+
+        $this->assertNotNull($pessoa);
+        $this->assertTrue($pessoa->relationLoaded('fisica'));
+    }
+
+    /**
+     * O ganho de banco: sem relação pedida, o eager load não roda. relationLoaded() === false
+     * prova isso de forma determinística, sem depender de contar queries (o pool de conexões
+     * por corrotina torna query log intermitente).
+     */
+    public function testListarSemRelacaoPedidaNaoCarregaRelacaoNemColunaExtra()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $repository->criar(
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Selecao Enxuta', 'ds_login' => 'teste.repo.selenxuta', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['ds_nome_oficial' => 'Selecao Enxuta Oficial', 'ds_cpf' => '222'],
+            null
+        );
+
+        $resultado = $repository->listar(
+            TenantDeTeste::cdCliente(),
+            [],
+            1,
+            20,
+            MapaDeCamposPessoa::selecao('ds_nome')
+        );
+
+        $pessoa = $resultado['itens']->first();
+
+        $this->assertNotNull($pessoa);
+        $this->assertFalse($pessoa->relationLoaded('fisica'));
+        $this->assertFalse($pessoa->relationLoaded('juridica'));
+        $this->assertSame(['ds_nome'], array_keys($pessoa->getAttributes()));
+    }
+
+    /**
+     * A armadilha do eager load parcial: sem a FK no select do filho, o Eloquent não casa
+     * pai e filho e devolve null SEM erro. Se este teste falhar com fisica null, a FK
+     * sumiu de SelecaoDeCampos::relacoes().
+     */
+    public function testEagerLoadParcialTrazAFkEPortantoCasaPaiEFilho()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $repository->criar(
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Selecao Com Fk', 'ds_login' => 'teste.repo.selfk', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['ds_nome_oficial' => 'Selecao Com Fk Oficial', 'ds_cpf' => '333'],
+            null
+        );
+
+        $resultado = $repository->listar(
+            TenantDeTeste::cdCliente(),
+            [],
+            1,
+            20,
+            MapaDeCamposPessoa::selecao('ds_nome,fisica.ds_cpf')
+        );
+
+        $pessoa = $resultado['itens']->first();
+
+        $this->assertNotNull($pessoa);
+        $this->assertTrue($pessoa->relationLoaded('fisica'));
+        $this->assertNotNull($pessoa->fisica, 'fisica veio null: a chave estrangeira caiu do select do eager load.');
+        $this->assertSame('333', $pessoa->fisica->ds_cpf);
+        // cd_pessoa entra no select do pai porque há relação pedida
+        $this->assertEqualsCanonicalizing(['cd_pessoa', 'ds_nome'], array_keys($pessoa->getAttributes()));
+    }
+
+    public function testBuscarPorIdRespeitaASelecao()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $pessoa = $repository->criar(
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Selecao Item', 'ds_login' => 'teste.repo.selitem', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
+            ['ds_nome_oficial' => 'Selecao Item Oficial', 'ds_cpf' => '444'],
+            null
+        );
+
+        $encontrada = $repository->buscarPorId(
+            $pessoa->cd_pessoa,
+            TenantDeTeste::cdCliente(),
+            MapaDeCamposPessoa::selecao('ds_nome')
+        );
+
+        $this->assertNotNull($encontrada);
+        $this->assertSame(['ds_nome'], array_keys($encontrada->getAttributes()));
+        $this->assertFalse($encontrada->relationLoaded('fisica'));
     }
 }

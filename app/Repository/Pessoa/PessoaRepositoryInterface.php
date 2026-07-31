@@ -13,6 +13,7 @@ declare(strict_types=1);
 namespace App\Repository\Pessoa;
 
 use App\Model\Pessoa\UnimPessoa;
+use App\Support\Campos\SelecaoDeCampos;
 use Hyperf\Database\Model\Collection;
 
 interface PessoaRepositoryInterface
@@ -42,14 +43,18 @@ interface PessoaRepositoryInterface
         bool $ehIsentoDeFisicaJuridica = false
     ): UnimPessoa;
 
-    public function buscarPorId(int $cdPessoa, int $cdCliente): ?UnimPessoa;
+    /**
+     * @param null|SelecaoDeCampos $selecao null significa contrato completo
+     */
+    public function buscarPorId(int $cdPessoa, int $cdCliente, ?SelecaoDeCampos $selecao = null): ?UnimPessoa;
 
     /**
      * @param array<string, mixed> $filtros
+     * @param null|SelecaoDeCampos $selecao null significa contrato completo
      *
      * @return array{itens: Collection<int, UnimPessoa>, total: int}
      */
-    public function listar(int $cdCliente, array $filtros, int $page, int $perPage): array;
+    public function listar(int $cdCliente, array $filtros, int $page, int $perPage, ?SelecaoDeCampos $selecao = null): array;
 
     public function excluir(int $cdPessoa, int $cdCliente): bool;
 
