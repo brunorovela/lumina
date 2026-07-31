@@ -8,6 +8,41 @@ Lumina — orquestrador de serviços e integrações. PHP 8.4 API on the **Hyper
 
 The MySQL schema is **shared with the legacy LMS** (`lms2`), a Laminas application whose source lives outside this repo at `~/uni-docker-hub/apps/lms`. Tables named `unim_*`, `lgin_*`, `ulms_*` and `saas_*` are not ours to redesign — read the LMS to learn how a table is meant to be used before assuming.
 
+## Regras deste projeto
+
+Regras definidas pelo dono do projeto. Valem sempre, e não são sugestões.
+
+### 1. Swagger acompanha o endpoint, sempre
+
+Toda mudança que afete o contrato HTTP — rota nova, parâmetro novo, campo novo na resposta, status novo, mudança de default — **atualiza os atributos `#[OA\...]` no mesmo commit**. Swagger desatualizado é pior que ausente: o cliente confia nele.
+
+Antes de dizer que uma implementação está pronta, **verifique** que atualizou, não presuma. `rtk proxy grep -n "OA\\\\" app/Controller/<...>` e confira contra o que você mudou. O Swagger é publicado em `:9500` e o container `lumina-docs` o serve — ele é lido de verdade.
+
+### 2. Não crie migration para modificar o banco
+
+Nada de `migrations/` novo para alterar schema, criar coluna, inserir dado de domínio ou conceder permissão. O schema é compartilhado com o LMS legado e a mudança não é nossa para fazer sozinhos.
+
+Quando uma coluna, um privilégio ou um par recurso/privilégio faltar: **pare e diga o que falta**, com o SQL exato que resolveria, e deixe a decisão com quem tem a caneta do banco. Não aplique.
+
+As três migrations em `migrations/` são históricas — já aplicadas em `lms2`. Não as apague (a tabela `migrations` tem registro delas) e não crie companheiras.
+
+### 3. `sn_excluido` não existe para você — use `dt_excluido`
+
+`dt_excluido` é a **única** fonte de verdade sobre exclusão. Nunca leia, filtre, ordene ou ramifique lógica por `sn_excluido`, mesmo onde a coluna existir. `SoftDeletes` nos models aponta para `dt_excluido` (`const DELETED_AT`), e é assim que fica.
+
+Uma exceção, e só ela: **`unim_pessoa_juridica.sn_excluido` é `NOT NULL` sem default no banco**, então o INSERT é obrigado a mandar um valor. `UnimPessoaJuridica::$attributes` supre `false` unicamente para satisfazer a constraint — não é lógica de exclusão e nada deve ler aquilo. Consertar isso de verdade exigiria dar um default à coluna, ou seja migration, o que a regra 2 proíbe. Deixe como está.
+
+### 4. Teste o que é necessário ou crítico — não tudo
+
+Teste vale pelo bug que pega, não pela contagem. Escreva teste quando:
+
+- a falha seria **silenciosa** (relação que vem `null` sem erro, chave de ACL que nega tudo, `select` vazio que gera SQL inválido);
+- há **regra de negócio** própria (o que apagar ao trocar o tipo pessoa, login isento de física/jurídica, clamp de `per_page`);
+- há **escopo de tenant ou PII** em jogo (`cd_cliente` no `WHERE`, campo que não pode vazar);
+- é **regressão** de bug que já aconteceu.
+
+Não escreva teste que só reafirma o que o tipo já garante, exercita getter trivial, ou repete pelo endpoint o que já está provado em unidade. Uma asserção que não falharia com o defeito presente não é teste — é ruído que custa manutenção.
+
 ## Commands
 
 **PHP does not exist on the host — only inside the `lumina` container.** Prefix every PHP/composer command with `docker exec lumina`.
@@ -29,10 +64,9 @@ docker exec lumina composer cs-check   # php-cs-fixer --dry-run --diff
 docker exec lumina composer cs-fix     # php-cs-fixer fix
 
 docker exec lumina composer test       # cs-check + php-unit + analyse, in that order (CI expectation)
-
-# Migrations
-docker exec lumina php /opt/www/bin/hyperf.php migrate --force
 ```
+
+Migrations run with `docker exec lumina php /opt/www/bin/hyperf.php migrate --force`, but **do not write new ones** — see regra 2.
 
 **PHPStan level lives in `phpstan.neon.dist`, and only there — currently `level: 10`, zero errors.** The `analyse` script deliberately passes no `-l`: when it did, the flag silently overrode the versioned template and the declared level meant nothing. `phpstan.neon` (no `.dist`) is gitignored and optional; PHPStan discovers the `.dist` on its own, so a clean clone works without copying anything.
 
@@ -62,7 +96,7 @@ Standard Hyperf skeleton wiring — most "framework" behavior lives in vendor pa
 
 - Use `App\Enum\Recurso` and `App\Enum\Privilegio`. They mirror `Lms\Enum\UlmsRecurso` / `UlmsPrivilegio` in the legacy LMS.
 - There is **no `listar` or `visualizar` privilege.** Reading is `ACESSAR` — see `Admin\Controller\GerenciarPessoaController::listarAction()` in the LMS.
-- `HyperfTest\Cases\Enum\AclEnumParidadeTest` checks every enum case and every route's ACL pair against the live database. If it fails, a key does not exist — do not "fix" the test.
+- `HyperfTest\Cases\Enum\AclEnumParidadeTest` checks every enum case and every route's ACL pair against the live database. If it fails, a key does not exist — do not "fix" the test. E não crie migration para inserir a chave que falta: pare e reporte, conforme a regra 2.
 - `AclService` caches permissions per profile in Redis (`acl:perfil:{cd_perfil}`, TTL 24h). After granting a permission in the database, **invalidate those keys** or the change only takes effect a day later.
 
 ## Sparse fieldsets (`?fields=`)
