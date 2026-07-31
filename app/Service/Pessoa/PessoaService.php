@@ -113,9 +113,12 @@ class PessoaService
         );
     }
 
-    public function buscar(int $cdPessoa, int $cdCliente): UnimPessoa
+    /**
+     * @param null|SelecaoDeCampos $selecao null significa contrato completo
+     */
+    public function buscar(int $cdPessoa, int $cdCliente, ?SelecaoDeCampos $selecao = null): UnimPessoa
     {
-        $pessoa = $this->pessoaRepository->buscarPorId($cdPessoa, $cdCliente);
+        $pessoa = $this->pessoaRepository->buscarPorId($cdPessoa, $cdCliente, $selecao);
 
         if ($pessoa === null) {
             throw new PessoaNaoEncontradaException();

@@ -13,6 +13,7 @@ declare(strict_types=1);
 namespace App\Controller\Pessoa;
 
 use App\Controller\AbstractController;
+use App\Request\Pessoa\BuscarPessoaRequest;
 use App\Request\Pessoa\CreatePessoaRequest;
 use App\Request\Pessoa\ListPessoaRequest;
 use App\Request\Pessoa\PatchPessoaRequest;
@@ -122,15 +123,26 @@ class PessoaController extends AbstractController
 
     #[OA\Get(path: '/pessoas/{id}', summary: 'Busca uma pessoa pelo identificador', tags: ['Pessoa'])]
     #[OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))]
+    #[OA\Parameter(
+        name: 'fields',
+        in: 'query',
+        description: 'Campos a devolver, separados por vírgula (mesma sintaxe de GET /pessoas). '
+            . 'Sem este parâmetro o detalhe devolve o registro COMPLETO — diferente da listagem, que devolve um conjunto enxuto.',
+        schema: new OA\Schema(type: 'string', example: 'ds_nome,fisica.ds_cpf')
+    )]
     #[OA\Response(response: 200, description: 'Pessoa encontrada')]
     #[OA\Response(response: 401, description: 'Não autenticado')]
     #[OA\Response(response: 403, description: 'Sem permissão')]
     #[OA\Response(response: 404, description: 'Pessoa não encontrada')]
-    public function buscar(int $id): ResponseInterface
+    #[OA\Response(response: 422, description: 'Dados inválidos')]
+    public function buscar(int $id, BuscarPessoaRequest $request): ResponseInterface
     {
-        $pessoa = $this->pessoaService->buscar($id, IdentidadeContext::cdCliente());
+        $fields = Tipo::mapa($request->validated())['fields'] ?? null;
+        $selecao = MapaDeCamposPessoa::selecao(is_string($fields) ? $fields : null, padraoEhTudo: true);
 
-        return $this->response->json(ApiResponse::sucesso(PessoaResource::um($pessoa)));
+        $pessoa = $this->pessoaService->buscar($id, IdentidadeContext::cdCliente(), $selecao);
+
+        return $this->response->json(ApiResponse::sucesso(PessoaResource::um($pessoa, $selecao)));
     }
 
     #[OA\Get(path: '/pessoas', summary: 'Lista pessoas do cliente autenticado', tags: ['Pessoa'])]

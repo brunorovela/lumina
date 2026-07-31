@@ -430,6 +430,80 @@ class PessoaControllerTest extends TestCase
         $this->get('/pessoas?fields=', [], $this->headers())->assertStatus(200);
     }
 
+    public function testDetalheSemFieldsDevolveCompleto()
+    {
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Detalhe',
+            'ds_login' => 'teste.http.detalhe',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Detalhe Oficial',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $item = $this->get("/pessoas/{$cdPessoa}", [], $this->headers())->json('data');
+
+        $this->assertEqualsCanonicalizing(
+            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica', 'fisica', 'juridica'],
+            array_keys($item)
+        );
+    }
+
+    public function testDetalheComFieldsRecorta()
+    {
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Detalhe Recorte',
+            'ds_login' => 'teste.http.detalherecorte',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Detalhe Recorte Oficial',
+        ], $this->headers());
+
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $item = $this->get("/pessoas/{$cdPessoa}?fields=ds_nome", [], $this->headers())->json('data');
+
+        $this->assertSame(['ds_nome' => 'Http Detalhe Recorte'], $item);
+    }
+
+    public function testDetalheComCampoInvalidoRetorna422()
+    {
+        $resposta = $this->get('/pessoas/1?fields=ds_senha', [], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertSame(['Campo não permitido: ds_senha.'], $resposta->json('errors.fields'));
+    }
+
+    /**
+     * Resposta de escrita filtrada esconderia o que o servidor gravou, então fields é
+     * ignorado em POST/PUT/PATCH de propósito.
+     */
+    public function testEscritaIgnoraFieldsEDevolveCompleto()
+    {
+        $criar = $this->json('/pessoas?fields=ds_nome', [
+            'ds_nome' => 'Http Escrita Fields',
+            'ds_login' => 'teste.http.escritafields',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Escrita Fields Oficial',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $this->assertEqualsCanonicalizing(
+            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica', 'fisica', 'juridica'],
+            array_keys($criar->json('data'))
+        );
+
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $patch = $this->patch("/pessoas/{$cdPessoa}?fields=ds_nome", ['ds_nome' => 'Http Escrita Fields Dois'], $this->headers());
+
+        $patch->assertStatus(200);
+        $this->assertArrayHasKey('fisica', $patch->json('data'));
+    }
+
     private function headers(): array
     {
         return ['Authorization' => "Bearer {$this->token}"];

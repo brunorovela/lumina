@@ -55,6 +55,7 @@ Router::addGroup('/pessoas', function () {
     ]);
     Router::get('/{id}', [PessoaController::class, 'buscar'], [
         'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
+        'middleware' => [ValidationMiddleware::class],
     ]);
     Router::get('', [PessoaController::class, 'listar'], [
         'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
