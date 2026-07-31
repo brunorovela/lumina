@@ -87,7 +87,14 @@ Standard Hyperf skeleton wiring — most "framework" behavior lives in vendor pa
 - **Listeners**: `#[Listener]`-attributed classes in `app/Listener` are auto-registered. `DbQueryExecutedListener` logs interpolated SQL to the `sql` channel and **stops when `APP_ENV=production`** — it would otherwise print bcrypt hashes and PII in plain text. `ResumeExitCoordinatorListener` resumes the `WORKER_EXIT` coordinator after CLI commands, which run inside a coroutine and won't exit cleanly without it.
 - **Middleware pipeline**: `config/autoload/middlewares.php` (`http` key) is **deliberately empty**. A global middleware runs before every per-route one, so a global `ValidationMiddleware` let an unauthenticated client discover a route's validation contract before authenticating. It is declared per route in `config/routes.php`, always **after** `AuthMiddleware`/`AclMiddleware` in the same list. Read the comments in both files before moving anything.
 - **Swagger**: `config/autoload/swagger.php` scans `app/` for OpenAPI attributes, serves on a **separate port (9500)**. The UI HTML comes from `storage/swagger/swagger-ui.html`, not the CDN, to avoid depending on `unpkg.hyperf.wiki`.
-- **Dev watcher**: `hyperf/watcher` watches `app/`, `config/`, `.env` (`config/autoload/watcher.php`), used by `composer watch` / `docker-compose.override.yml`.
+- **Dev watcher (hot reload)**: `hyperf/watcher` polls `app/` and `config/` plus `.env` every 2s (`ScanFileDriver`, `config/autoload/watcher.php`). **Not active until you activate it** — `docker-compose.override.yml` is gitignored, so a fresh clone runs the Dockerfile's `start` command and every code change needs a manual container restart. To enable:
+
+  ```bash
+  cp docker-compose.override.yml.dist docker-compose.override.yml
+  docker compose up -d lumina    # only lumina — recreating everything drops redis, killing live sessions and the ACL cache
+  ```
+
+  Reload lands in ~3s. It does **not** pick up changes to `composer.json`/`vendor/`, to files outside `app/`+`config/` (e.g. `storage/languages/`), or to `watcher.php` itself — those still need a restart. Each reload kills the workers, so a long-running coroutine dies mid-flight.
 - Code generators (`gen:model`, `gen:request`, …) target namespaces in `config/autoload/devtool.php`; the ones without a directory yet (`App\Command`, `App\Job`, `App\Amqp\*`) get created on first use.
 
 ## ACL — as chaves são as do LMS, não invente
