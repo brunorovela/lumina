@@ -51,11 +51,21 @@ class PessoaController extends AbstractController
             ]
         )
     )]
-    #[OA\Response(response: 201, description: 'Pessoa criada')]
-    #[OA\Response(response: 401, description: 'Não autenticado')]
-    #[OA\Response(response: 403, description: 'Sem permissão')]
-    #[OA\Response(response: 409, description: 'Já existe pessoa com esse login para este cliente')]
-    #[OA\Response(response: 422, description: 'Dados inválidos')]
+    #[OA\Response(
+        response: 201,
+        description: 'Pessoa criada. A resposta é sempre completa: ?fields= é ignorado na escrita, para não esconder o que o servidor gravou.',
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(property: 'data', ref: '#/components/schemas/Pessoa'),
+            ],
+            type: 'object'
+        )
+    )]
+    #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 409, description: 'Já existe pessoa com esse login para este cliente', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 422, description: 'Dados inválidos', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function criar(CreatePessoaRequest $request): ResponseInterface
     {
         $pessoa = $this->pessoaService->criar(IdentidadeContext::cdCliente(), Tipo::mapa($request->validated()));
@@ -81,11 +91,21 @@ class PessoaController extends AbstractController
             ]
         )
     )]
-    #[OA\Response(response: 200, description: 'Pessoa atualizada')]
-    #[OA\Response(response: 401, description: 'Não autenticado')]
-    #[OA\Response(response: 403, description: 'Sem permissão')]
-    #[OA\Response(response: 404, description: 'Pessoa não encontrada')]
-    #[OA\Response(response: 422, description: 'Dados inválidos')]
+    #[OA\Response(
+        response: 200,
+        description: 'Pessoa atualizada. A resposta é sempre completa: ?fields= é ignorado na escrita.',
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(property: 'data', ref: '#/components/schemas/Pessoa'),
+            ],
+            type: 'object'
+        )
+    )]
+    #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 404, description: 'Pessoa não encontrada', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 422, description: 'Dados inválidos', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function atualizar(int $id, UpdatePessoaRequest $request): ResponseInterface
     {
         $pessoa = $this->pessoaService->atualizar($id, IdentidadeContext::cdCliente(), Tipo::mapa($request->validated()));
@@ -109,11 +129,21 @@ class PessoaController extends AbstractController
             ]
         )
     )]
-    #[OA\Response(response: 200, description: 'Pessoa atualizada')]
-    #[OA\Response(response: 401, description: 'Não autenticado')]
-    #[OA\Response(response: 403, description: 'Sem permissão')]
-    #[OA\Response(response: 404, description: 'Pessoa não encontrada')]
-    #[OA\Response(response: 422, description: 'Dados inválidos (ou nenhum campo enviado)')]
+    #[OA\Response(
+        response: 200,
+        description: 'Pessoa atualizada. A resposta é sempre completa: ?fields= é ignorado na escrita.',
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(property: 'data', ref: '#/components/schemas/Pessoa'),
+            ],
+            type: 'object'
+        )
+    )]
+    #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 404, description: 'Pessoa não encontrada', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 422, description: 'Dados inválidos (ou nenhum campo enviado)', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function atualizarParcial(int $id, PatchPessoaRequest $request): ResponseInterface
     {
         $pessoa = $this->pessoaService->atualizarParcial($id, IdentidadeContext::cdCliente(), Tipo::mapa($request->validated()));
@@ -130,11 +160,21 @@ class PessoaController extends AbstractController
             . 'Sem este parâmetro o detalhe devolve o registro COMPLETO — diferente da listagem, que devolve um conjunto enxuto.',
         schema: new OA\Schema(type: 'string', example: 'ds_nome,fisica.ds_cpf')
     )]
-    #[OA\Response(response: 200, description: 'Pessoa encontrada')]
-    #[OA\Response(response: 401, description: 'Não autenticado')]
-    #[OA\Response(response: 403, description: 'Sem permissão')]
-    #[OA\Response(response: 404, description: 'Pessoa não encontrada')]
-    #[OA\Response(response: 422, description: 'Dados inválidos')]
+    #[OA\Response(
+        response: 200,
+        description: 'Pessoa encontrada. Por padrão vem o registro COMPLETO; com ?fields= vem só o que foi pedido.',
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(property: 'data', ref: '#/components/schemas/Pessoa'),
+            ],
+            type: 'object'
+        )
+    )]
+    #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 404, description: 'Pessoa não encontrada', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 422, description: 'Dados inválidos', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function buscar(int $id, BuscarPessoaRequest $request): ResponseInterface
     {
         $fields = Tipo::mapa($request->validated())['fields'] ?? null;
@@ -158,10 +198,26 @@ class PessoaController extends AbstractController
             . 'Campos disponíveis: cd_pessoa, cd_cliente, ds_nome, ds_login, sn_pessoa_juridica, fisica.ds_nome_oficial, fisica.ds_cpf, juridica.ds_cnpj, juridica.ds_nome_fantasia.',
         schema: new OA\Schema(type: 'string', example: 'ds_nome,fisica.ds_cpf')
     )]
-    #[OA\Response(response: 200, description: 'Lista paginada de pessoas')]
-    #[OA\Response(response: 401, description: 'Não autenticado')]
-    #[OA\Response(response: 403, description: 'Sem permissão')]
-    #[OA\Response(response: 422, description: 'Dados inválidos')]
+    #[OA\Response(
+        response: 200,
+        description: 'Lista paginada. Sem ?fields=, cada item traz apenas os campos de PessoaResumida; '
+            . 'com ?fields= (ou fields=*), cada item segue o schema Pessoa recortado pelo que foi pedido.',
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(
+                    property: 'data',
+                    type: 'array',
+                    items: new OA\Items(ref: '#/components/schemas/PessoaResumida')
+                ),
+                new OA\Property(property: 'meta', ref: '#/components/schemas/MetaPaginacao'),
+            ],
+            type: 'object'
+        )
+    )]
+    #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 422, description: 'Dados inválidos', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function listar(ListPessoaRequest $request): ResponseInterface
     {
         $validado = Tipo::mapa($request->validated());
@@ -188,10 +244,20 @@ class PessoaController extends AbstractController
 
     #[OA\Delete(path: '/pessoas/{id}', summary: 'Exclui uma pessoa existente', tags: ['Pessoa'])]
     #[OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))]
-    #[OA\Response(response: 200, description: 'Pessoa excluída')]
-    #[OA\Response(response: 401, description: 'Não autenticado')]
-    #[OA\Response(response: 403, description: 'Sem permissão')]
-    #[OA\Response(response: 404, description: 'Pessoa não encontrada')]
+    #[OA\Response(
+        response: 200,
+        description: 'Pessoa excluída. É soft delete: a linha permanece com dt_excluido preenchido e para de aparecer nas leituras.',
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(property: 'data', type: 'boolean', example: true),
+            ],
+            type: 'object'
+        )
+    )]
+    #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 404, description: 'Pessoa não encontrada', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     public function excluir(int $id): ResponseInterface
     {
         $this->pessoaService->excluir($id, IdentidadeContext::cdCliente());

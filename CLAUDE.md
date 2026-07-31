@@ -12,11 +12,31 @@ The MySQL schema is **shared with the legacy LMS** (`lms2`), a Laminas applicati
 
 Regras definidas pelo dono do projeto. Valem sempre, e não são sugestões.
 
-### 1. Swagger acompanha o endpoint, sempre
+### 1. Documentação clara e completa, e ela é o JSON gerado — não o atributo no PHP
 
-Toda mudança que afete o contrato HTTP — rota nova, parâmetro novo, campo novo na resposta, status novo, mudança de default — **atualiza os atributos `#[OA\...]` no mesmo commit**. Swagger desatualizado é pior que ausente: o cliente confia nele.
+Toda mudança que afete o contrato HTTP — rota nova, parâmetro novo, campo novo na resposta, status novo, mudança de default — atualiza os atributos `#[OA\...]` **e regenera o artefato, no mesmo commit**:
 
-Antes de dizer que uma implementação está pronta, **verifique** que atualizou, não presuma. `rtk proxy grep -n "OA\\\\" app/Controller/<...>` e confira contra o que você mudou. O Swagger é publicado em `:9500` e o container `lumina-docs` o serve — ele é lido de verdade.
+```bash
+docker exec lumina php /opt/www/bin/hyperf.php gen:swagger
+```
+
+**Editar o atributo não publica nada.** Quem serve a documentação é o container `lumina-docs` (`:8082`), lendo o arquivo estático `storage/swagger/http.json` via bind-mount; `SWAGGER_ENABLE_SERVER` é `false` de propósito. `http.json` é versionado (ver `storage/swagger/.gitignore`) e sem `gen:swagger` ele fica congelado — já aconteceu de o parâmetro `fields` existir no código por quatro dias e não aparecer na documentação que o time lia.
+
+Verifique o **artefato**, não o fonte, antes de dizer que está pronto:
+
+```bash
+python3 -c "import json; d=json.load(open('storage/swagger/http.json')); print(json.dumps(d['paths']['/pessoas']['get'], ensure_ascii=False, indent=2))"
+```
+
+**O que "clara e completa" quer dizer aqui:** alguém que nunca viu este projeto tem de conseguir usar o endpoint só com a documentação, sem ler o código. Na prática, cada endpoint precisa de:
+
+- **Schema da resposta**, não só uma frase de descrição. Descrição sem `content`/`JsonContent` não diz ao leitor que campos voltam — e é o estado em que estas rotas ficaram por semanas.
+- **O envelope**, porque toda resposta é embrulhada por `App\Support\ApiResponse`: `{success, data}`, mais `meta` na listagem, `{success, message}` no erro, e `errors` por campo no 422.
+- **Todo parâmetro** com tipo, default, exemplo e o que acontece quando é omitido.
+- **Cada status possível** apontando o schema do corpo daquele status, não só um texto.
+- **O que surpreende, dito na descrição.** Defaults diferentes entre lista e item, `fields` ignorado na escrita, `per_page` limitado a 100, soft delete que mantém a linha. Quem lê não vai adivinhar.
+
+Schemas reutilizáveis ficam em `app/Swagger/` — classes só de documentação, sem comportamento, uma por schema (`#[OA\Schema]` não é repetível na mesma classe). Referencie com `new OA\JsonContent(ref: '#/components/schemas/Pessoa')` em vez de repetir a forma em cada endpoint.
 
 ### 2. Não crie migration para modificar o banco
 
@@ -112,7 +132,7 @@ Standard Hyperf skeleton wiring — most "framework" behavior lives in vendor pa
 
 - **`App\Resource\Pessoa\MapaDeCamposPessoa` is the single source of truth** for what the API exposes. A column absent from the map is unreachable — that is why there is no blacklist and why `ds_senha` can never be selected.
 - Defaults differ **on purpose**: the list returns a lean set, the item returns everything, writes ignore `fields`. Documented in the Swagger of both read endpoints.
-- Adding a field takes **two** edits: the map, and the `#[OA\Parameter(name: 'fields')]` description in both read endpoints. PHP attributes require constant expressions, so the Swagger list cannot be derived from the map.
+- Adding a field takes **three** edits: the map, `App\Swagger\PessoaSchema` (and `PessoaResumidaSchema` if it belongs in the lean default), and the `#[OA\Parameter(name: 'fields')]` description in both read endpoints. PHP attributes require constant expressions, so none of that can be derived from the map. Then `gen:swagger` — see regra 1.
 - The `select` inside an eager load **must** carry the foreign key. Without it Eloquent cannot match child to parent and returns the relation as `null` with no error. `SelecaoDeCampos::relacoes()` injects it; `PessoaRepositoryTest::testEagerLoadParcialTrazAFkEPortantoCasaPaiEFilho` guards it.
 - `PessoaResource` checks `relationLoaded()` before touching a relation. Touching an unloaded one triggers lazy load — one query per row (N+1).
 
