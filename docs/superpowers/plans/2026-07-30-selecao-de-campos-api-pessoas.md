@@ -1150,6 +1150,7 @@ use App\Resource\Pessoa\MapaDeCamposPessoa;
 use App\Support\Campos\SelecaoDeCampos;
 use Closure;
 use Hyperf\Database\Model\Builder;
+use Hyperf\Database\Model\Relations\Relation;
 ```
 
 Substituir `buscarPorId()` e `listar()`:
@@ -1208,39 +1209,48 @@ Substituir `buscarPorId()` e `listar()`:
             $query->with([$relacao => self::selecionar($colunas)]);
         }
 
-        return $query->select($selecao->colunas());
+        // select() só existe em Query\Builder e chega ao Model\Builder via @mixin (mesmo
+        // gap de tipagem do forPage() já documentado no ignoreErrors do phpstan.neon.dist):
+        // encadear a chamada faria o phpstan inferir o retorno como Query\Builder. Chamar e
+        // devolver $query separadamente preserva o Builder<UnimPessoa> que
+        // UnimPessoa::query() já garante.
+        $query->select($selecao->colunas());
+
+        return $query;
     }
 
     /**
+     * O callback do with() recebe a RELAÇÃO, não um Builder: o Hyperf faz
+     * `$constraints($relation)` em Model\Builder::eagerLoadRelation(), passando o HasOne/
+     * HasMany. Tipar o parâmetro como Builder derruba com TypeError em runtime. Relation
+     * encaminha select() ao query builder subjacente via __call.
+     *
      * @param string[] $colunas
      *
-     * @return Closure(Builder<Model>): void
+     * @return Closure(Relation<UnimPessoa>): void
      */
     private static function selecionar(array $colunas): Closure
     {
-        return static function (Builder $consulta) use ($colunas): void {
+        return static function (Relation $consulta) use ($colunas): void {
             $consulta->select($colunas);
         };
     }
 ```
 
-O docblock acima usa `Builder<Model>` no tipo do `Closure`, então o import de `Model` é necessário:
+**Correção aplicada durante a execução (2026-07-31).** A primeira versão deste passo tipava o
+parâmetro do closure como `Builder` e encadeava `return $query->select(...)`. As duas coisas
+estavam erradas, e o implementador da Task 4 as corrigiu com evidência:
 
-```php
-use Hyperf\Database\Model\Model;
-```
+1. `Model\Builder::eagerLoadRelation()` faz `$constraints($relation)` — o callback recebe a
+   **relação** (`HasOne`), não um `Builder`. Tipar como `Builder` derruba com `TypeError` em
+   runtime. Verificado em `vendor/hyperf/database/src/Model/Builder.php:1372`.
+2. Encadear `return $query->select(...)` faz o phpstan inferir `Query\Builder` no retorno, em
+   vez de `Builder<UnimPessoa>` — o mesmo gap de `@mixin` que o `forPage()` já sofre. Separar a
+   chamada do `return` preserva o tipo.
 
-Se o `analyse` acusar o genérico do `Closure` (o callback do `with()` recebe o builder da relação, e o Hyperf não anota esse ponto), a saída é trocar **só** o docblock do `selecionar()` por:
-
-```php
-    /**
-     * @param string[] $colunas
-     *
-     * @return Closure(Builder<UnimPessoa>): void
-     */
-```
-
-E, se ainda acusar, `@return Closure` sem genérico — o parâmetro tipado `Builder $consulta` na assinatura já garante o que importa em runtime. Não remova o `select()`, não silencie com `ignoreErrors`.
+Se o `analyse` ainda acusar o genérico do `Closure`, a saída é reduzir o docblock para
+`@return Closure` sem genérico — o parâmetro tipado `Relation $consulta` já garante o que
+importa em runtime. Não remova o `select()`, não silencie com `ignoreErrors`.
 
 - [ ] **Step 5: Rodar os testes do Repository**
 
