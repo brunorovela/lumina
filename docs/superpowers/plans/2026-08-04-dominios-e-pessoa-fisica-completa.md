@@ -2456,7 +2456,15 @@ trait ValidaDocumentosDePessoa
 }
 ```
 
-`trans()` é função global e está disponível: `hyperf/translation` declara `src/Functions.php` em `autoload.files` do composer, verificado em `vendor/composer/installed.json`. Não precisa passar pelo container.
+**`trans()` é namespaced, não global.** `hyperf/translation` declara `src/Functions.php` em `autoload.files`, então o arquivo é carregado — mas a função dentro dele vive em `Hyperf\Translation`. Importe:
+
+```php
+use function Hyperf\Translation\trans;
+```
+
+(Descoberto na execução da Task 7. A verificação original olhou o `autoload.files` e concluiu "global" sem conferir o namespace do arquivo.)
+
+**`$this->input()` dentro do `after()` lê o request CRU, não o `validationData()` normalizado.** A normalização alimenta o validador, não o `input()` do FormRequest — então o trait de DV receberia o valor ainda com máscara e reprovaria um CPF válido enviado como `123.456.789-09`. Reaplique `Documento::apenasDigitos()` dentro do trait antes de checar o dígito; é idempotente. (Também descoberto na execução da Task 7.)
 
 - [ ] **Step 5: Acrescente as mensagens ao arquivo versionado**
 
@@ -2542,7 +2550,9 @@ class CreatePessoaRequest extends FormRequest
 Abra `app/Request/Pessoa/UpdatePessoaRequest.php` e `app/Request/Pessoa/PatchPessoaRequest.php`. Em cada um:
 
 1. acrescente os dois `use` de trait dentro da classe (`use NormalizaCamposDePessoa;` e `use ValidaDocumentosDePessoa;`) e os `use` de namespace no topo;
-2. acrescente ao array de `rules()` as **mesmas dez linhas** de campo de física do passo 6 (de `ds_nome_social` a `cd_estado_civil`), preservando as regras que já existem para os campos antigos — no `PatchPessoaRequest` todas as regras já são `sometimes`/`nullable`, então mantenha esse estilo e escreva `sometimes|nullable|...` nas dez;
+2. acrescente ao array de `rules()` as **mesmas dez linhas** de campo de física do passo 6 (de `ds_nome_social` a `cd_estado_civil`) — no `PatchPessoaRequest` todas as regras já são `sometimes`/`nullable`, então mantenha esse estilo e escreva `sometimes|nullable|...` nas dez;
+
+   **Atenção, e aqui o texto anterior deste passo estava errado:** ele dizia "preservando as regras que já existem para os campos antigos", o que faz `ds_cpf`/`ds_cnpj` ficarem `string` no `UpdatePessoaRequest` e no `PatchPessoaRequest` enquanto o `CreatePessoaRequest` ganha `digits:11`/`digits:14`. O spec lista essas regras **uma vez, para escrita em geral**, sem distinguir endpoint. Aplique `digits:11` e `digits:14` nos três, mantendo `required_if` onde já está. Divergência entre as três classes é precisamente o Finding 14 deste projeto;
 3. acrescente `validationData()` idêntico ao do passo 6;
 4. se a classe já tem `withValidator()`, acrescente a chamada `$this->validarDocumentos($validator);` ao corpo existente; se não tem, crie o método como no passo 6.
 
