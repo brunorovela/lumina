@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 namespace App\Resource\Dominio;
 
+use App\Model\Dominio\SaasCidade;
+use App\Model\Dominio\SaasEstado;
 use App\Model\Dominio\SaasEstadoCivil;
 use App\Model\Dominio\SaasPais;
 use App\Model\Dominio\UnimPessoaContatoTipo;
@@ -77,6 +79,47 @@ class DominioResource
                 'cd_tipo' => $tipo->cd_tipo,
                 'ds_descricao' => $tipo->ds_descricao,
                 'ds_chave' => $tipo->ds_chave,
+            ];
+        }
+
+        return $itens;
+    }
+
+    /**
+     * @param iterable<SaasEstado> $estados
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function estados(iterable $estados): array
+    {
+        $itens = [];
+
+        foreach ($estados as $estado) {
+            $itens[] = [
+                'cd_estado' => $estado->cd_estado,
+                'cd_pais' => $estado->cd_pais,
+                'ds_estado' => $estado->ds_estado,
+                'ds_uf' => $estado->ds_uf,
+            ];
+        }
+
+        return $itens;
+    }
+
+    /**
+     * @param iterable<SaasCidade> $cidades
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function cidades(iterable $cidades): array
+    {
+        $itens = [];
+
+        foreach ($cidades as $cidade) {
+            $itens[] = [
+                'cd_cidade' => $cidade->cd_cidade,
+                'cd_estado' => $cidade->cd_estado,
+                'ds_cidade' => $cidade->ds_cidade,
             ];
         }
 

@@ -14,8 +14,11 @@ namespace App\Controller\Dominio;
 
 use App\Controller\AbstractController;
 use App\Repository\Dominio\DominioRepositoryInterface;
+use App\Request\Dominio\ListCidadeRequest;
+use App\Request\Dominio\ListEstadoRequest;
 use App\Resource\Dominio\DominioResource;
 use App\Support\ApiResponse;
+use App\Support\Tipo;
 use Hyperf\Di\Annotation\Inject;
 use Hyperf\Swagger\Annotation as OA;
 use Psr\Http\Message\ResponseInterface;
@@ -114,6 +117,91 @@ class DominioController extends AbstractController
     {
         return $this->response->json(
             ApiResponse::sucesso(DominioResource::tiposDeContato($this->dominioRepository->tiposDeContato()))
+        );
+    }
+
+    #[OA\Get(
+        path: '/estados',
+        summary: 'Lista os estados do catálogo global',
+        description: 'Catálogo global, sem escopo de cliente, sem paginação e sem `meta`. '
+            . 'Omitir cd_pais devolve os estados de todos os países.',
+        tags: ['Domínio']
+    )]
+    #[OA\Parameter(
+        name: 'cd_pais',
+        in: 'query',
+        required: false,
+        description: 'Filtra por país. Omitido, devolve todos os estados. Obtenha o código em GET /paises.',
+        schema: new OA\Schema(type: 'integer', example: 1)
+    )]
+    #[OA\Response(
+        response: 200,
+        description: 'Lista de estados, ordenada por ds_estado.',
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(property: 'data', type: 'array', items: new OA\Items(ref: '#/components/schemas/Estado')),
+            ],
+            type: 'object'
+        )
+    )]
+    #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 422, description: 'cd_pais não é inteiro válido', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
+    public function estados(ListEstadoRequest $request): ResponseInterface
+    {
+        $validado = Tipo::mapa($request->validated());
+        $cdPais = isset($validado['cd_pais']) ? Tipo::inteiro($validado['cd_pais']) : null;
+
+        return $this->response->json(
+            ApiResponse::sucesso(DominioResource::estados($this->dominioRepository->estados($cdPais)))
+        );
+    }
+
+    #[OA\Get(
+        path: '/cidades',
+        summary: 'Lista as cidades de um estado',
+        description: 'Catálogo global, sem escopo de cliente, sem paginação e sem `meta`. '
+            . 'cd_estado é OBRIGATÓRIO: a tabela tem quase 5 mil linhas e a rota não devolve o catálogo inteiro. '
+            . 'Sem ele a resposta é 422.',
+        tags: ['Domínio']
+    )]
+    #[OA\Parameter(
+        name: 'cd_estado',
+        in: 'query',
+        required: true,
+        description: 'Estado das cidades. Obrigatório — sem ele a resposta é 422. Obtenha o código em GET /estados.',
+        schema: new OA\Schema(type: 'integer', example: 26)
+    )]
+    #[OA\Parameter(
+        name: 'q',
+        in: 'query',
+        required: false,
+        description: 'Filtra ds_cidade por trecho do nome (LIKE %q%), sem distinção de acento ou caixa (collation do banco). Omitido, devolve todas as cidades do estado.',
+        schema: new OA\Schema(type: 'string', example: 'camp')
+    )]
+    #[OA\Response(
+        response: 200,
+        description: 'Lista de cidades do estado pedido, ordenada por ds_cidade.',
+        content: new OA\JsonContent(
+            properties: [
+                new OA\Property(property: 'success', type: 'boolean', example: true),
+                new OA\Property(property: 'data', type: 'array', items: new OA\Items(ref: '#/components/schemas/Cidade')),
+            ],
+            type: 'object'
+        )
+    )]
+    #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 422, description: 'cd_estado ausente ou inválido', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
+    public function cidades(ListCidadeRequest $request): ResponseInterface
+    {
+        $validado = Tipo::mapa($request->validated());
+        $cdEstado = Tipo::inteiro($validado['cd_estado'] ?? null);
+        $q = isset($validado['q']) ? Tipo::texto($validado['q']) : null;
+
+        return $this->response->json(
+            ApiResponse::sucesso(DominioResource::cidades($this->dominioRepository->cidades($cdEstado, $q)))
         );
     }
 }

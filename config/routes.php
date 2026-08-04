@@ -89,3 +89,16 @@ Router::get('/contato-tipos', [DominioController::class, 'tiposDeContato'], [
     'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
     'middleware' => [AuthMiddleware::class, AclMiddleware::class],
 ]);
+
+// Estas duas recebem parâmetro, então entram com ValidationMiddleware — depois de
+// Auth/Acl na mesma lista, para token inválido barrar em 401 antes de a validação
+// contar ao cliente quais parâmetros existem.
+Router::get('/estados', [DominioController::class, 'estados'], [
+    'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
+    'middleware' => [AuthMiddleware::class, AclMiddleware::class, ValidationMiddleware::class],
+]);
+
+Router::get('/cidades', [DominioController::class, 'cidades'], [
+    'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
+    'middleware' => [AuthMiddleware::class, AclMiddleware::class, ValidationMiddleware::class],
+]);
