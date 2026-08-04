@@ -130,9 +130,13 @@ class PessoaResourceTest extends TestCase
         $semFields = PessoaResource::um($pessoa, MapaDeCamposPessoa::selecao(null, padraoEhTudo: true));
 
         $this->assertIsArray($semFields['fisica']);
-        $this->assertArrayHasKey('ds_nome_oficial', $semFields['fisica']);
-        $this->assertArrayNotHasKey('ds_cpf', $semFields['fisica']);
-        $this->assertArrayNotHasKey('ds_nome_mae', $semFields['fisica']);
+        // Conjunto exato, não apenas ausência de dois campos: pin nas cinco chaves
+        // sensíveis fora e nas sete não sensíveis dentro, para que perder OU ganhar uma
+        // flag `sensivel: true` em qualquer campo do mapa quebre este teste.
+        $this->assertEqualsCanonicalizing(
+            ['ds_nome_oficial', 'ds_nome_social', 'ds_orgao_estado', 'ds_identidade_orgao_exp', 'dt_identidade_expedicao', 'ds_sexo', 'cd_estado_civil'],
+            array_keys($semFields['fisica'])
+        );
 
         $comCuringa = PessoaResource::um($pessoa, MapaDeCamposPessoa::selecao('fisica.*'));
 

@@ -154,9 +154,14 @@ class PessoaRepository implements PessoaRepositoryInterface
      */
     public function listar(int $cdCliente, array $filtros, int $page, int $perPage, ?SelecaoDeCampos $selecao = null): array
     {
-        // completa(): este fallback é leitura INTERNA (PessoaService::atualizarParcial()
-        // chama buscar() sem seleção só para descobrir o tipo da pessoa). Regra de
-        // exposição de PII é do contrato HTTP, e quem a aplica é o Controller.
+        // completa(): hoje nenhum chamador interno passa null aqui — PessoaController
+        // sempre resolve e passa uma SelecaoDeCampos explícita (é dali que vem a regra de
+        // PII do contrato HTTP). Este fallback só existe para o método ter um
+        // comportamento definido se um dia alguém chamar listar() sem seleção; o default
+        // é deliberadamente sem filtro porque quem decide o que o cliente HTTP vê é o
+        // Controller, não este Repository — um chamador HTTP que vier a depender deste
+        // fallback precisa aplicar a exclusão de sensível ele mesmo, assim como o
+        // Controller já faz hoje via MapaDeCamposPessoa::selecao().
         $selecao ??= SelecaoDeCampos::completa(MapaDeCamposPessoa::mapa(), MapaDeCamposPessoa::CHAVE_LOCAL);
 
         $query = self::consulta($selecao)->where('cd_cliente', $cdCliente);
