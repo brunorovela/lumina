@@ -44,7 +44,20 @@ class PessoaResourceTest extends TestCase
             'ds_nome' => 'Ana',
             'ds_login' => 'ana.teste',
             'sn_pessoa_juridica' => false,
-            'fisica' => ['ds_nome_oficial' => 'Ana Oficial', 'ds_cpf' => '123'],
+            'fisica' => [
+                'ds_nome_oficial' => 'Ana Oficial',
+                'ds_nome_social' => null,
+                'ds_nome_mae' => null,
+                'ds_nome_pai' => null,
+                'ds_cpf' => '123',
+                'ds_identidade' => null,
+                'ds_orgao_estado' => null,
+                'ds_identidade_orgao_exp' => null,
+                'dt_identidade_expedicao' => null,
+                'dt_nascimento' => null,
+                'ds_sexo' => null,
+                'cd_estado_civil' => null,
+            ],
             'juridica' => null,
         ], $saida);
     }
@@ -103,6 +116,58 @@ class PessoaResourceTest extends TestCase
         $saida = PessoaResource::muitos([$this->pessoa(), $this->pessoa()], MapaDeCamposPessoa::selecao('ds_nome'));
 
         $this->assertSame([['ds_nome' => 'Ana'], ['ds_nome' => 'Ana']], $saida);
+    }
+
+    public function testDefaultDoItemNaoTrazPiiMasCuringaTraz()
+    {
+        $pessoa = new UnimPessoa(['ds_nome' => 'Ana Souza']);
+        $pessoa->setRelation('fisica', new UnimPessoaFisica([
+            'ds_nome_oficial' => 'Ana Souza',
+            'ds_cpf' => '12345678909',
+            'ds_nome_mae' => 'Maria Souza',
+        ]));
+
+        $semFields = PessoaResource::um($pessoa, MapaDeCamposPessoa::selecao(null, padraoEhTudo: true));
+
+        $this->assertIsArray($semFields['fisica']);
+        $this->assertArrayHasKey('ds_nome_oficial', $semFields['fisica']);
+        $this->assertArrayNotHasKey('ds_cpf', $semFields['fisica']);
+        $this->assertArrayNotHasKey('ds_nome_mae', $semFields['fisica']);
+
+        $comCuringa = PessoaResource::um($pessoa, MapaDeCamposPessoa::selecao('fisica.*'));
+
+        $this->assertIsArray($comCuringa['fisica']);
+        $this->assertSame('12345678909', $comCuringa['fisica']['ds_cpf']);
+        $this->assertSame('Maria Souza', $comCuringa['fisica']['ds_nome_mae']);
+    }
+
+    public function testRespostaDeEscritaTrazPii()
+    {
+        $pessoa = new UnimPessoa(['ds_nome' => 'Ana Souza']);
+        $pessoa->setRelation('fisica', new UnimPessoaFisica([
+            'ds_nome_oficial' => 'Ana Souza',
+            'ds_cpf' => '12345678909',
+        ]));
+
+        // Sem seleção = caminho de POST/PUT/PATCH. Filtrar aqui esconderia o que o
+        // servidor acabou de gravar.
+        $escrita = PessoaResource::um($pessoa);
+
+        $this->assertIsArray($escrita['fisica']);
+        $this->assertSame('12345678909', $escrita['fisica']['ds_cpf']);
+    }
+
+    public function testDataSaiComoYmdENaoComoDatetimeIso()
+    {
+        $pessoa = new UnimPessoa(['ds_nome' => 'Ana Souza']);
+        $pessoa->setRelation('fisica', new UnimPessoaFisica(['dt_nascimento' => '1990-05-12']));
+
+        $saida = PessoaResource::um($pessoa, MapaDeCamposPessoa::selecao('fisica.dt_nascimento'));
+
+        // getAttribute() devolve Carbon: sem tratamento no Resource o JSON sairia
+        // "1990-05-12T00:00:00.000000Z".
+        $this->assertIsArray($saida['fisica']);
+        $this->assertSame('1990-05-12', $saida['fisica']['dt_nascimento']);
     }
 
     private function pessoa(): UnimPessoa

@@ -33,6 +33,9 @@ final class MapaDeCamposPessoa
      * atributo PHP exige expressão constante, então a lista de campos do Swagger não pode ser
      * derivada deste mapa e nada força as duas a acompanharem.
      *
+     * PII (sensivel: true) sai do default de GET /pessoas/{id} e só vem se pedida por nome
+     * ou por curinga. Resposta de escrita traz sempre — ver PessoaResource.
+     *
      * @return array<string, Campo>
      */
     public static function mapa(): array
@@ -44,7 +47,17 @@ final class MapaDeCamposPessoa
             'ds_login' => Campo::coluna('ds_login', noPadrao: true),
             'sn_pessoa_juridica' => Campo::coluna('sn_pessoa_juridica', noPadrao: true),
             'fisica.ds_nome_oficial' => Campo::relacao('fisica', 'ds_nome_oficial', self::CHAVE_LOCAL),
-            'fisica.ds_cpf' => Campo::relacao('fisica', 'ds_cpf', self::CHAVE_LOCAL),
+            'fisica.ds_nome_social' => Campo::relacao('fisica', 'ds_nome_social', self::CHAVE_LOCAL),
+            'fisica.ds_nome_mae' => Campo::relacao('fisica', 'ds_nome_mae', self::CHAVE_LOCAL, sensivel: true),
+            'fisica.ds_nome_pai' => Campo::relacao('fisica', 'ds_nome_pai', self::CHAVE_LOCAL, sensivel: true),
+            'fisica.ds_cpf' => Campo::relacao('fisica', 'ds_cpf', self::CHAVE_LOCAL, sensivel: true),
+            'fisica.ds_identidade' => Campo::relacao('fisica', 'ds_identidade', self::CHAVE_LOCAL, sensivel: true),
+            'fisica.ds_orgao_estado' => Campo::relacao('fisica', 'ds_orgao_estado', self::CHAVE_LOCAL),
+            'fisica.ds_identidade_orgao_exp' => Campo::relacao('fisica', 'ds_identidade_orgao_exp', self::CHAVE_LOCAL),
+            'fisica.dt_identidade_expedicao' => Campo::relacao('fisica', 'dt_identidade_expedicao', self::CHAVE_LOCAL),
+            'fisica.dt_nascimento' => Campo::relacao('fisica', 'dt_nascimento', self::CHAVE_LOCAL, sensivel: true),
+            'fisica.ds_sexo' => Campo::relacao('fisica', 'ds_sexo', self::CHAVE_LOCAL),
+            'fisica.cd_estado_civil' => Campo::relacao('fisica', 'cd_estado_civil', self::CHAVE_LOCAL),
             'juridica.ds_cnpj' => Campo::relacao('juridica', 'ds_cnpj', self::CHAVE_LOCAL),
             'juridica.ds_nome_fantasia' => Campo::relacao('juridica', 'ds_nome_fantasia', self::CHAVE_LOCAL),
         ];

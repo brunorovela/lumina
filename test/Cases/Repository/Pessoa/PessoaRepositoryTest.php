@@ -284,7 +284,7 @@ class PessoaRepositoryTest extends TestCase
             [],
             1,
             20,
-            MapaDeCamposPessoa::selecao('ds_nome,fisica.ds_cpf')
+            MapaDeCamposPessoa::selecao('ds_nome,fisica.ds_cpf,fisica.dt_nascimento')
         );
 
         $pessoa = $resultado['itens']->first();

@@ -535,6 +535,36 @@ class PessoaControllerTest extends TestCase
         $this->get('/pessoas/1?fields=ds_senha')->assertStatus(401);
     }
 
+    public function testDetalheNaoDevolvePiiSemPedidoExplicito()
+    {
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste PII',
+            'ds_login' => 'teste.http.pii',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste PII Oficial',
+            'ds_cpf' => '12345678909',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        // Resposta de escrita traz PII: o cliente precisa confirmar o que foi gravado.
+        $this->assertSame('12345678909', $criar->json('data.fisica.ds_cpf'));
+
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $semFields = $this->get("/pessoas/{$cdPessoa}", [], $this->headers());
+        $semFields->assertStatus(200);
+        $this->assertArrayNotHasKey('ds_cpf', $semFields->json('data.fisica'));
+
+        $porNome = $this->get("/pessoas/{$cdPessoa}", ['fields' => 'fisica.ds_cpf'], $this->headers());
+        $porNome->assertStatus(200);
+        $this->assertSame('12345678909', $porNome->json('data.fisica.ds_cpf'));
+
+        $porCuringa = $this->get("/pessoas/{$cdPessoa}", ['fields' => 'fisica.*'], $this->headers());
+        $porCuringa->assertStatus(200);
+        $this->assertSame('12345678909', $porCuringa->json('data.fisica.ds_cpf'));
+    }
+
     private function headers(): array
     {
         return ['Authorization' => "Bearer {$this->token}"];

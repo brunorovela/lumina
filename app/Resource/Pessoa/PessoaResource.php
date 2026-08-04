@@ -14,6 +14,7 @@ namespace App\Resource\Pessoa;
 
 use App\Model\Pessoa\UnimPessoa;
 use App\Support\Campos\SelecaoDeCampos;
+use DateTimeInterface;
 use Hyperf\Database\Model\Model;
 
 class PessoaResource
@@ -27,7 +28,9 @@ class PessoaResource
      */
     public static function um(UnimPessoa $pessoa, ?SelecaoDeCampos $selecao = null): array
     {
-        $selecao ??= MapaDeCamposPessoa::selecao(null, padraoEhTudo: true);
+        // completa() e não selecao(padraoEhTudo: true): sem seleção significa resposta de
+        // ESCRITA, e ali a PII tem de vir — filtrar esconderia o que o servidor gravou.
+        $selecao ??= SelecaoDeCampos::completa(MapaDeCamposPessoa::mapa(), MapaDeCamposPessoa::CHAVE_LOCAL);
 
         $saida = [];
 
@@ -35,7 +38,7 @@ class PessoaResource
             $campo = $selecao->campo($chave);
 
             if (! $campo->ehDeRelacao()) {
-                $saida[$chave] = $pessoa->getAttribute($campo->coluna);
+                $saida[$chave] = self::valor($pessoa->getAttribute($campo->coluna));
 
                 continue;
             }
@@ -57,7 +60,7 @@ class PessoaResource
             }
 
             $valores = is_array($saida[$relacao]) ? $saida[$relacao] : [];
-            $valores[$campo->coluna] = $filho->getAttribute($campo->coluna);
+            $valores[$campo->coluna] = self::valor($filho->getAttribute($campo->coluna));
             $saida[$relacao] = $valores;
         }
 
@@ -78,5 +81,20 @@ class PessoaResource
         }
 
         return $itens;
+    }
+
+    /**
+     * Data vira 'Y-m-d'. getAttribute() devolve Carbon quando a coluna tem cast date, e o
+     * formato declarado em $casts (date:Y-m-d) só é aplicado dentro de toArray()
+     * (HasAttributes::addCastAttributesToArray) — que este Resource não usa, de propósito,
+     * porque toArray() exporia coluna que o mapa não expõe. Sem isto o JSON sairia
+     * "1990-05-12T00:00:00.000000Z" onde a documentação promete "1990-05-12".
+     *
+     * Hoje todo campo de data exposto é data pura. No dia em que um datetime entrar no
+     * mapa, esta regra precisa passar a distinguir os dois.
+     */
+    private static function valor(mixed $valor): mixed
+    {
+        return $valor instanceof DateTimeInterface ? $valor->format('Y-m-d') : $valor;
     }
 }

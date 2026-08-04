@@ -135,7 +135,10 @@ class PessoaRepository implements PessoaRepositoryInterface
      */
     public function buscarPorId(int $cdPessoa, int $cdCliente, ?SelecaoDeCampos $selecao = null): ?UnimPessoa
     {
-        $selecao ??= MapaDeCamposPessoa::selecao(null, padraoEhTudo: true);
+        // completa(): este fallback é leitura INTERNA (PessoaService::atualizarParcial()
+        // chama buscar() sem seleção só para descobrir o tipo da pessoa). Regra de
+        // exposição de PII é do contrato HTTP, e quem a aplica é o Controller.
+        $selecao ??= SelecaoDeCampos::completa(MapaDeCamposPessoa::mapa(), MapaDeCamposPessoa::CHAVE_LOCAL);
 
         return self::consulta($selecao)
             ->where('cd_pessoa', $cdPessoa)
@@ -151,7 +154,10 @@ class PessoaRepository implements PessoaRepositoryInterface
      */
     public function listar(int $cdCliente, array $filtros, int $page, int $perPage, ?SelecaoDeCampos $selecao = null): array
     {
-        $selecao ??= MapaDeCamposPessoa::selecao(null, padraoEhTudo: true);
+        // completa(): este fallback é leitura INTERNA (PessoaService::atualizarParcial()
+        // chama buscar() sem seleção só para descobrir o tipo da pessoa). Regra de
+        // exposição de PII é do contrato HTTP, e quem a aplica é o Controller.
+        $selecao ??= SelecaoDeCampos::completa(MapaDeCamposPessoa::mapa(), MapaDeCamposPessoa::CHAVE_LOCAL);
 
         $query = self::consulta($selecao)->where('cd_cliente', $cdCliente);
 
