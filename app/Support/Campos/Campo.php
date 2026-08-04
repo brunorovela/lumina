@@ -19,6 +19,9 @@ namespace App\Support\Campos;
  * Coluna de relação: Campo::relacao('fisica', 'ds_cpf', 'cd_pessoa') — a chave estrangeira
  * é obrigatória porque sem ela o eager load parcial não casa pai e filho, e o Eloquent
  * falha em silêncio nesse caso (a relação vem null, sem erro).
+ *
+ * Campo sensível (PII: CPF, RG, filiação, nascimento) sai do default do item — só vem se
+ * pedido por nome ou por curinga. Ver SelecaoDeCampos::de() e ::completa().
  */
 final class Campo
 {
@@ -27,21 +30,23 @@ final class Campo
         public readonly ?string $relacao,
         public readonly ?string $chaveEstrangeira,
         public readonly bool $noPadrao,
+        public readonly bool $sensivel,
     ) {
     }
 
-    public static function coluna(string $coluna, bool $noPadrao = false): self
+    public static function coluna(string $coluna, bool $noPadrao = false, bool $sensivel = false): self
     {
-        return new self($coluna, null, null, $noPadrao);
+        return new self($coluna, null, null, $noPadrao, $sensivel);
     }
 
     public static function relacao(
         string $relacao,
         string $coluna,
         string $chaveEstrangeira,
-        bool $noPadrao = false
+        bool $noPadrao = false,
+        bool $sensivel = false
     ): self {
-        return new self($coluna, $relacao, $chaveEstrangeira, $noPadrao);
+        return new self($coluna, $relacao, $chaveEstrangeira, $noPadrao, $sensivel);
     }
 
     public function ehDeRelacao(): bool

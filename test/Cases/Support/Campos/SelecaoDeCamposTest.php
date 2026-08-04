@@ -132,6 +132,41 @@ class SelecaoDeCamposTest extends TestCase
         $selecao->colunas();
     }
 
+    public function testPadraoEhTudoOmiteCampoSensivel()
+    {
+        $selecao = SelecaoDeCampos::de(null, $this->mapaComSensivel(), 'cd_pessoa', padraoEhTudo: true);
+
+        $this->assertContains('ds_nome', $selecao->campos());
+        $this->assertNotContains('fisica.ds_cpf', $selecao->campos());
+    }
+
+    public function testCuringaTrazCampoSensivelPorqueFoiPedido()
+    {
+        $this->assertContains(
+            'fisica.ds_cpf',
+            SelecaoDeCampos::de('*', $this->mapaComSensivel(), 'cd_pessoa')->campos()
+        );
+
+        $this->assertContains(
+            'fisica.ds_cpf',
+            SelecaoDeCampos::de('fisica.*', $this->mapaComSensivel(), 'cd_pessoa')->campos()
+        );
+    }
+
+    public function testNomeExatoTrazCampoSensivel()
+    {
+        $selecao = SelecaoDeCampos::de('fisica.ds_cpf', $this->mapaComSensivel(), 'cd_pessoa');
+
+        $this->assertSame(['fisica.ds_cpf'], $selecao->campos());
+    }
+
+    public function testCompletaTrazCampoSensivelParaRespostaDeEscrita()
+    {
+        $selecao = SelecaoDeCampos::completa($this->mapaComSensivel(), 'cd_pessoa');
+
+        $this->assertEqualsCanonicalizing(array_keys($this->mapaComSensivel()), $selecao->campos());
+    }
+
     /**
      * @return array<string, Campo>
      */
@@ -149,5 +184,18 @@ class SelecaoDeCamposTest extends TestCase
     private function selecao(?string $fields, bool $padraoEhTudo = false): SelecaoDeCampos
     {
         return SelecaoDeCampos::de($fields, $this->mapa(), 'cd_pessoa', $padraoEhTudo);
+    }
+
+    /**
+     * @return array<string, Campo>
+     */
+    private function mapaComSensivel(): array
+    {
+        return [
+            'cd_pessoa' => Campo::coluna('cd_pessoa', noPadrao: true),
+            'ds_nome' => Campo::coluna('ds_nome', noPadrao: true),
+            'fisica.ds_nome_oficial' => Campo::relacao('fisica', 'ds_nome_oficial', 'cd_pessoa'),
+            'fisica.ds_cpf' => Campo::relacao('fisica', 'ds_cpf', 'cd_pessoa', sensivel: true),
+        ];
     }
 }

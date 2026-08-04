@@ -51,13 +51,16 @@ final class SelecaoDeCampos
         $tokens = self::tokens($fields);
 
         if ($tokens === []) {
+            // padraoEhTudo é o default do ITEM, e default não é pedido: campo sensível fica
+            // fora. Pedir por nome ou por curinga é pedido explícito e traz. Resposta de
+            // escrita usa completa(), que ignora essa distinção.
             return $padraoEhTudo
-                ? new self($mapa, array_keys($mapa), $chaveLocal, true)
+                ? new self($mapa, self::naoSensiveis($mapa), $chaveLocal, true)
                 : new self($mapa, self::doPadrao($mapa), $chaveLocal, false);
         }
 
         if (in_array('*', $tokens, true)) {
-            return new self($mapa, array_keys($mapa), $chaveLocal, true);
+            return self::completa($mapa, $chaveLocal);
         }
 
         $campos = [];
@@ -69,6 +72,17 @@ final class SelecaoDeCampos
         }
 
         return new self($mapa, array_keys($campos), $chaveLocal, false);
+    }
+
+    /**
+     * Mapa inteiro, campo sensível incluso. É o que a resposta de POST/PUT/PATCH usa:
+     * filtrar a resposta de escrita esconderia o que o servidor acabou de gravar.
+     *
+     * @param array<string, Campo> $mapa
+     */
+    public static function completa(array $mapa, string $chaveLocal): self
+    {
+        return new self($mapa, array_keys($mapa), $chaveLocal, true);
     }
 
     /**
@@ -156,6 +170,10 @@ final class SelecaoDeCampos
         return array_map(static fn (array $colunas): array => array_keys($colunas), $relacoes);
     }
 
+    /**
+     * Verdadeiro quando o cliente NÃO recortou nada — default do item ou curinga. Não
+     * significa "todos os campos do mapa": no default do item os sensíveis ficam fora.
+     */
     public function tudo(): bool
     {
         return $this->tudo;
@@ -229,5 +247,23 @@ final class SelecaoDeCampos
         }
 
         return $padrao;
+    }
+
+    /**
+     * @param array<string, Campo> $mapa
+     *
+     * @return string[]
+     */
+    private static function naoSensiveis(array $mapa): array
+    {
+        $campos = [];
+
+        foreach ($mapa as $chave => $campo) {
+            if (! $campo->sensivel) {
+                $campos[] = $chave;
+            }
+        }
+
+        return $campos;
     }
 }
