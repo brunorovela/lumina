@@ -14,6 +14,7 @@ namespace HyperfTest\Cases\Controller\Dominio;
 
 use App\Enum\Privilegio;
 use App\Enum\Recurso;
+use Hyperf\DbConnection\Db;
 use Hyperf\Redis\Redis;
 use Hyperf\Testing\TestCase;
 use HyperfTest\Support\TenantDeTeste;
@@ -92,10 +93,13 @@ class DominioControllerTest extends TestCase
 
     public function testEstadosFiltradosPorPais()
     {
-        // cd_pais vem de /estados (não de /paises): saas_pais tem Angola (cd_pais=2) sem
-        // nenhuma linha em saas_estado, e /paises ordena por ds_pais — "Angola" vem antes de
-        // "Brasil". Partir de /paises pegaria um país sem estados e o assertNotEmpty abaixo
-        // falharia por dado do catálogo, não por defeito da rota.
+        // cd_pais vem de /estados (não de /paises): saas_pais tem um país (Angola nesta
+        // base) sem nenhuma linha em saas_estado, e /paises ordena por ds_pais — "Angola"
+        // vem antes de "Brasil". Partir de /paises pegaria um país sem estados e o
+        // assertNotEmpty abaixo falharia por dado do catálogo, não por defeito da rota.
+        // Este é o caso positivo (o país tem estados e todos vêm filtrados); o caso que
+        // realmente prova que o WHERE roda — filtrar por um país SEM estado nenhum — está
+        // em testEstadosFiltradosPorPaisSemEstadoDevolveVazio() logo abaixo.
         $cdPais = $this->get('/estados', [], $this->headers())->json('data')[0]['cd_pais'];
 
         $resposta = $this->get('/estados', ['cd_pais' => $cdPais], $this->headers());
@@ -109,6 +113,40 @@ class DominioControllerTest extends TestCase
         foreach ($dados as $estado) {
             $this->assertSame($cdPais, $estado['cd_pais']);
         }
+    }
+
+    /**
+     * Prova que o filtro cd_pais é de fato aplicado no WHERE, não apenas compatível com o
+     * dado que já existe.
+     *
+     * testEstadosFiltradosPorPais() sozinho não distingue "o filtro roda" de "o filtro foi
+     * ignorado": ele sempre pega o país que /estados devolve primeiro sem filtro, e como
+     * 100% das linhas de saas_estado pertencem a um único país nesta base, filtrar por ele
+     * devolve o mesmo conjunto com ou sem o WHERE — a asserção passaria mesmo se
+     * DominioRepository::estados() descartasse cd_pais silenciosamente.
+     *
+     * A lacuna do catálogo é a alavanca: um país que existe em saas_pais mas não tem
+     * nenhuma linha em saas_estado só devolve vazio se o WHERE realmente rodou. Se o filtro
+     * fosse um no-op, viriam as 27 linhas do outro país.
+     */
+    public function testEstadosFiltradosPorPaisSemEstadoDevolveVazio()
+    {
+        $cdPaisSemEstado = Db::table('saas_pais')
+            ->whereNotIn('cd_pais', Db::table('saas_estado')->select('cd_pais'))
+            ->value('cd_pais');
+
+        if ($cdPaisSemEstado === null) {
+            $this->markTestSkipped(
+                'Todo país em saas_pais tem ao menos um estado em saas_estado nesta base. '
+                . 'Sem um país "vazio" não há como provar que o filtro cd_pais é aplicado '
+                . 'de verdade (em vez de ignorado) — ver PHPDoc do teste.'
+            );
+        }
+
+        $resposta = $this->get('/estados', ['cd_pais' => $cdPaisSemEstado], $this->headers());
+
+        $resposta->assertStatus(200);
+        $this->assertSame([], $resposta->json('data'));
     }
 
     public function testCidadesSemEstadoResponde422()

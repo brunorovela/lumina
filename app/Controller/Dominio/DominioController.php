@@ -131,7 +131,7 @@ class DominioController extends AbstractController
         name: 'cd_pais',
         in: 'query',
         required: false,
-        description: 'Filtra por país. Omitido, devolve todos os estados. Obtenha o código em GET /paises.',
+        description: 'Filtra por país. Deve ser inteiro >= 1. Omitido, devolve todos os estados. Obtenha o código em GET /paises.',
         schema: new OA\Schema(type: 'integer', example: 1)
     )]
     #[OA\Response(
@@ -147,7 +147,7 @@ class DominioController extends AbstractController
     )]
     #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
-    #[OA\Response(response: 422, description: 'cd_pais não é inteiro válido', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
+    #[OA\Response(response: 422, description: 'cd_pais informado não é inteiro ou é menor que 1 (o parâmetro em si é opcional)', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function estados(ListEstadoRequest $request): ResponseInterface
     {
         $validado = Tipo::mapa($request->validated());
@@ -170,7 +170,7 @@ class DominioController extends AbstractController
         name: 'cd_estado',
         in: 'query',
         required: true,
-        description: 'Estado das cidades. Obrigatório — sem ele a resposta é 422. Obtenha o código em GET /estados.',
+        description: 'Estado das cidades. Obrigatório e deve ser inteiro >= 1 — sem ele, ou fora desse formato, a resposta é 422. Obtenha o código em GET /estados.',
         schema: new OA\Schema(type: 'integer', example: 26)
     )]
     #[OA\Parameter(
