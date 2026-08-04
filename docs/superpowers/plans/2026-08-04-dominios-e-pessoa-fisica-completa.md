@@ -1284,6 +1284,8 @@ final class ContatoTipoSchema
 
 Sem Service: catálogo read-only não tem regra de negócio a hospedar, e um Service aqui seria repasse vazio. O controller injeta o repositório direto, com `#[Inject]` como o resto do projeto.
 
+**`#[OA\HyperfServer(name: 'http')]` na classe é obrigatório.** Sem ele o `gen:swagger` publica os schemas mas **não** os paths — a documentação fica com `Pais` em `components` e nenhuma rota em `paths`, que é exatamente a falha silenciosa da regra 1. `PessoaController` e `AuthController` já o declaram; siga a convenção. (Corrigido durante a execução da Task 4, que descobriu a omissão empiricamente.)
+
 `app/Controller/Dominio/DominioController.php`:
 
 ```php
