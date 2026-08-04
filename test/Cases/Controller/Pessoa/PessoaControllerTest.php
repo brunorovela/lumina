@@ -779,6 +779,117 @@ class PessoaControllerTest extends TestCase
         $this->assertArrayHasKey('dt_nascimento', $resposta->json('errors'));
     }
 
+    public function testCriaPessoaFisicaComOsDezCamposNovos()
+    {
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Completa',
+            'ds_login' => 'teste.http.completa',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Completa Oficial',
+            'ds_nome_social' => 'Completa',
+            'ds_nome_mae' => 'Mae Completa',
+            'ds_nome_pai' => 'Pai Completa',
+            'ds_cpf' => '52998224725',
+            'ds_identidade' => '123456789',
+            'ds_orgao_estado' => 'SP',
+            'ds_identidade_orgao_exp' => 'SSP',
+            'dt_identidade_expedicao' => '2015-03-01',
+            'dt_nascimento' => '1990-05-12',
+            'ds_sexo' => 'f',
+            'cd_estado_civil' => $this->cdEstadoCivil(),
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $detalhe = $this->get("/pessoas/{$cdPessoa}", ['fields' => 'fisica.*'], $this->headers());
+        $detalhe->assertStatus(200);
+        $fisica = $detalhe->json('data.fisica');
+
+        $this->assertSame('Completa', $fisica['ds_nome_social']);
+        $this->assertSame('Mae Completa', $fisica['ds_nome_mae']);
+        $this->assertSame('Pai Completa', $fisica['ds_nome_pai']);
+        $this->assertSame('52998224725', $fisica['ds_cpf']);
+        $this->assertSame('123456789', $fisica['ds_identidade']);
+        $this->assertSame('SP', $fisica['ds_orgao_estado']);
+        $this->assertSame('SSP', $fisica['ds_identidade_orgao_exp']);
+        $this->assertSame('2015-03-01', $fisica['dt_identidade_expedicao']);
+        $this->assertSame('1990-05-12', $fisica['dt_nascimento']);
+        $this->assertSame('f', $fisica['ds_sexo']);
+        $this->assertSame($this->cdEstadoCivil(), $fisica['cd_estado_civil']);
+    }
+
+    public function testNormalizaSexoEStringVaziaAoGravar()
+    {
+        // Fecha o par que a Task 7 deixou pela metade: a normalização roda em
+        // validationData(), mas só aqui os campos chegam ao banco e podem ser observados.
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Normaliza',
+            'ds_login' => 'teste.http.normaliza',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Normaliza Oficial',
+            'ds_sexo' => 'F',
+            'ds_nome_social' => '',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $this->assertSame('f', $criar->json('data.fisica.ds_sexo'));
+        $this->assertNull($criar->json('data.fisica.ds_nome_social'));
+    }
+
+    public function testPatchAtualizaCampoNovoDeFisica()
+    {
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Patch Fisica',
+            'ds_login' => 'teste.http.patchfisica',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Patch Fisica Oficial',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $patch = $this->patch("/pessoas/{$cdPessoa}", ['ds_nome_social' => 'Patchado'], $this->headers());
+        $patch->assertStatus(200);
+        $this->assertSame('Patchado', $patch->json('data.fisica.ds_nome_social'));
+    }
+
+    public function testPatchComCampoDeFisicaEmPessoaJuridicaNaoCriaLinhaFisica()
+    {
+        // Finding 14: PATCH nunca troca o tipo pessoa, e campo do tipo que a pessoa NÃO é
+        // tem de ser ignorado em silêncio. Com dez campos a mais, dez portas a mais.
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Juridica Patch',
+            'ds_login' => 'teste.http.juridicapatch',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => true,
+            'ds_cnpj' => '00000000000191',
+            'ds_nome_fantasia' => 'Http Teste Fantasia',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $patch = $this->patch("/pessoas/{$cdPessoa}", [
+            'ds_nome_mae' => 'Nao Deve Gravar',
+            'ds_sexo' => 'f',
+        ], $this->headers());
+
+        $patch->assertStatus(200);
+        $this->assertSame(
+            0,
+            Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->count()
+        );
+    }
+
+    private function cdEstadoCivil(): int
+    {
+        return (int) Db::table('saas_estado_civil')->min('cd_estado_civil');
+    }
+
     private function headers(): array
     {
         return ['Authorization' => "Bearer {$this->token}"];

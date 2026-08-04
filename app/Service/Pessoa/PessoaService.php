@@ -24,6 +24,40 @@ class PessoaService
 {
     private const LOGINS_ISENTOS_DE_FISICA_JURIDICA = ['admin', 'administrador'];
 
+    /**
+     * Colunas de unim_pessoa_fisica que a API escreve. FONTE ÚNICA: separarDados() (POST/PUT)
+     * e atualizarParcial() (PATCH) leem daqui.
+     *
+     * Antes eram duas listas literais separadas, e é assim que ds_cnpj acabou gravado em
+     * pessoa física (Finding 14). Com treze colunas em jogo, manter duas listas em sincronia
+     * na mão não é uma aposta razoável.
+     *
+     * ds_nome_oficial fica FORA: é obrigatório para pessoa física e tratado à parte em
+     * separarDados(), com regra própria.
+     *
+     * @var string[]
+     */
+    private const CAMPOS_FISICA = [
+        'ds_nome_social',
+        'ds_nome_mae',
+        'ds_nome_pai',
+        'ds_cpf',
+        'ds_identidade',
+        'ds_orgao_estado',
+        'ds_identidade_orgao_exp',
+        'dt_identidade_expedicao',
+        'dt_nascimento',
+        'ds_sexo',
+        'cd_estado_civil',
+    ];
+
+    /**
+     * Colunas de unim_pessoa_juridica que a API escreve. Mesma razão de CAMPOS_FISICA.
+     *
+     * @var string[]
+     */
+    private const CAMPOS_JURIDICA = ['ds_cnpj', 'ds_nome_fantasia'];
+
     public function __construct(private PessoaRepositoryInterface $pessoaRepository)
     {
     }
@@ -94,14 +128,15 @@ class PessoaService
             $dadosPessoa['ds_senha'] = password_hash(Tipo::texto($dadosPessoa['ds_senha']), PASSWORD_BCRYPT);
         }
 
-        // Campos do tipo que a pessoa NÃO é são ignorados silenciosamente, mesmo que
-        // venham no payload.
+        // Campos do tipo que a pessoa NÃO é são ignorados silenciosamente, mesmo que venham
+        // no payload. Com treze colunas de física em jogo, a lista vem da constante — duas
+        // listas literais foi como ds_cnpj entrou em pessoa física (Finding 14).
         $dadosFisica = $pessoaAtual->sn_pessoa_juridica
             ? []
-            : array_intersect_key($dados, array_flip(['ds_nome_oficial', 'ds_cpf']));
+            : self::somenteCamposConhecidos($dados, [...self::CAMPOS_FISICA, 'ds_nome_oficial']);
 
         $dadosJuridica = $pessoaAtual->sn_pessoa_juridica
-            ? array_intersect_key($dados, array_flip(['ds_cnpj', 'ds_nome_fantasia']))
+            ? self::somenteCamposConhecidos($dados, self::CAMPOS_JURIDICA)
             : [];
 
         return $this->pessoaRepository->atualizar(
@@ -192,20 +227,40 @@ class PessoaService
         }
 
         if ($dados['sn_pessoa_juridica']) {
-            $dadosJuridica = [
-                'ds_cnpj' => $dados['ds_cnpj'],
-                'ds_nome_fantasia' => $dados['ds_nome_fantasia'],
-            ];
-
-            return [$dadosPessoa, null, $dadosJuridica];
+            return [$dadosPessoa, null, self::somenteCamposConhecidos($dados, self::CAMPOS_JURIDICA)];
         }
 
+        // ds_nome_oficial é obrigatório para pessoa física (required_if no FormRequest), por
+        // isso entra direto e não pela lista de opcionais.
         $dadosFisica = ['ds_nome_oficial' => $dados['ds_nome_oficial']];
 
-        if (isset($dados['ds_cpf'])) {
-            $dadosFisica['ds_cpf'] = $dados['ds_cpf'];
+        return [
+            $dadosPessoa,
+            [...$dadosFisica, ...self::somenteCamposConhecidos($dados, self::CAMPOS_FISICA)],
+            null,
+        ];
+    }
+
+    /**
+     * Recorta do payload apenas as chaves presentes e conhecidas. `array_intersect_key` faria
+     * o mesmo, mas com a lista invertida (flip) em cada chamada — aqui a intenção fica
+     * explícita e a lista de campos continua legível.
+     *
+     * @param array<string, mixed> $dados
+     * @param string[] $campos
+     *
+     * @return array<string, mixed>
+     */
+    private static function somenteCamposConhecidos(array $dados, array $campos): array
+    {
+        $recorte = [];
+
+        foreach ($campos as $campo) {
+            if (array_key_exists($campo, $dados)) {
+                $recorte[$campo] = $dados[$campo];
+            }
         }
 
-        return [$dadosPessoa, $dadosFisica, null];
+        return $recorte;
     }
 }
