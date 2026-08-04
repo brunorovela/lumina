@@ -11,6 +11,8 @@ declare(strict_types=1);
  */
 use App\Repository\Auth\AuthRepository;
 use App\Repository\Auth\AuthRepositoryInterface;
+use App\Repository\Dominio\DominioRepository;
+use App\Repository\Dominio\DominioRepositoryInterface;
 use App\Repository\Pessoa\PessoaRepository;
 use App\Repository\Pessoa\PessoaRepositoryInterface;
 use Hyperf\HttpServer\Response;
@@ -19,6 +21,7 @@ use Psr\Http\Message\ResponseInterface;
 return [
     PessoaRepositoryInterface::class => PessoaRepository::class,
     AuthRepositoryInterface::class => AuthRepository::class,
+    DominioRepositoryInterface::class => DominioRepository::class,
     // AuthMiddleware/AclMiddleware injetam Psr\Http\Message\ResponseInterface diretamente no
     // construtor (em vez do Hyperf\HttpServer\Contract\ResponseInterface usado pelos
     // controllers). O skeleton do Hyperf só registra o binding do contrato próprio; sem esta
