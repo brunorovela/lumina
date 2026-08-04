@@ -254,12 +254,16 @@ class PessoaControllerTest extends TestCase
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
             'ds_nome_oficial' => 'Http Relacao Oficial',
-            'ds_cpf' => '99988877766',
+            // Task 7 passou a validar o dígito verificador; '99988877766' (usado antes) não
+            // fecha a conta e o create cairia em 422. Trocado por um CPF de mesma "família"
+            // com DV válido -- o valor em si é irrelevante para o que este teste prova
+            // (fields de relação sem vazar chave de join).
+            'ds_cpf' => '99988877714',
         ], $this->headers())->assertStatus(201);
 
         $item = $this->get('/pessoas?nome=Relacao Unica&fields=ds_nome,fisica.ds_cpf', [], $this->headers())->json('data.0');
 
-        $this->assertSame(['ds_nome' => 'Http Relacao Unica', 'fisica' => ['ds_cpf' => '99988877766']], $item);
+        $this->assertSame(['ds_nome' => 'Http Relacao Unica', 'fisica' => ['ds_cpf' => '99988877714']], $item);
     }
 
     public function testListaComRelacaoPedidaEmPessoaDoOutroTipoDevolveNulo()
@@ -563,6 +567,106 @@ class PessoaControllerTest extends TestCase
         $porCuringa = $this->get("/pessoas/{$cdPessoa}", ['fields' => 'fisica.*'], $this->headers());
         $porCuringa->assertStatus(200);
         $this->assertSame('12345678909', $porCuringa->json('data.fisica.ds_cpf'));
+    }
+
+    public function testCpfComMascaraPassaPelaRegraDigits()
+    {
+        // A normalização roda em validationData(), ANTES das regras: sem ela, "123.456.789-09"
+        // reprovaria em digits:11 e este teste veria 422. ds_cpf já é persistido hoje, então
+        // aqui a asserção sobre o valor gravado é legítima antes da Task 8.
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Mascara',
+            'ds_login' => 'teste.http.mascara',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Mascara Oficial',
+            'ds_cpf' => '123.456.789-09',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $this->assertSame('12345678909', $criar->json('data.fisica.ds_cpf'));
+    }
+
+    public function testCpfComDigitoVerificadorInvalidoResponde422ComFrase()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste CPF',
+            'ds_login' => 'teste.http.cpfruim',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste CPF Oficial',
+            'ds_cpf' => '12345678900',
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $mensagem = $resposta->json('errors.ds_cpf')[0];
+
+        // A mensagem tem de ser frase, não a chave crua: storage/languages é produção.
+        $this->assertStringNotContainsString('validation.', $mensagem);
+    }
+
+    public function testSexoForaDoDominioResponde422()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Sexo',
+            'ds_login' => 'teste.http.sexoruim',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Sexo Oficial',
+            'ds_sexo' => 'x',
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('ds_sexo', $resposta->json('errors'));
+    }
+
+    public function testEstadoCivilInexistenteResponde422ENao409()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Estado Civil',
+            'ds_login' => 'teste.http.estadocivil',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Estado Civil Oficial',
+            'cd_estado_civil' => 999999,
+        ], $this->headers());
+
+        // Sem a regra exists, a FK viraria SQLSTATE 23000 e o DatabaseExceptionHandler
+        // devolveria 409 -- o mesmo status de "login ja existe", mandando quem investiga
+        // para o lado errado.
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('cd_estado_civil', $resposta->json('errors'));
+    }
+
+    public function testExpedicaoAnteriorAoNascimentoResponde422()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Datas',
+            'ds_login' => 'teste.http.datas',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Datas Oficial',
+            'dt_nascimento' => '1990-05-12',
+            'dt_identidade_expedicao' => '1985-01-01',
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('dt_identidade_expedicao', $resposta->json('errors'));
+    }
+
+    public function testNascimentoNoFuturoResponde422()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Futuro',
+            'ds_login' => 'teste.http.futuro',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Futuro Oficial',
+            'dt_nascimento' => '2099-01-01',
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('dt_nascimento', $resposta->json('errors'));
     }
 
     private function headers(): array
