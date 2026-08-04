@@ -29,8 +29,16 @@ use function Hyperf\Translation\trans;
  * valor que já veio só com dígitos, e é o que realmente limpa a máscara quando ela chega
  * intacta neste ponto.
  *
- * Só reporta quando o campo veio: campo ausente é assunto de `nullable`/`required_if`,
- * não daqui.
+ * Guarda com is_scalar(), não is_string(): Hyperf\Validation\Concerns\ValidatesAttributes::
+ * validateDigits() faz `(string) $value` antes de medir, então um inteiro sem aspas no
+ * JSON ("ds_cpf": 12345678900) passa em digits:11 sem nunca virar string. Com a guarda em
+ * is_string(), esse inteiro pulava a checagem de dígito verificador inteira -- 201 com CPF
+ * inválido gravado (Critical 1 da revisão da Task 7). Tipo::texto() converte int/float/bool
+ * pra string sem lançar, então aceitar qualquer escalar aqui é seguro; só array/objeto sem
+ * __toString lançaria, e esses nunca chegam como valor de um campo de formulário.
+ *
+ * Só reporta quando o campo tem algum dígito: campo ausente ou só-máscara (que
+ * Documento::apenasDigitos() esvazia) é assunto de `nullable`/`required_if`, não daqui.
  */
 trait ValidaDocumentosDePessoa
 {
@@ -39,9 +47,7 @@ trait ValidaDocumentosDePessoa
         $validator->after(function (ValidatorInterface $validator): void {
             $cpf = $this->input('ds_cpf');
 
-            if (is_string($cpf) && $cpf !== '') {
-                $cpfSoDigitos = Documento::apenasDigitos(Tipo::texto($cpf));
-
+            if (is_scalar($cpf) && ($cpfSoDigitos = Documento::apenasDigitos(Tipo::texto($cpf))) !== '') {
                 if (! Documento::cpfEhValido($cpfSoDigitos)) {
                     // trans() declara array|string (chaves de mensagem em lote viram array);
                     // as duas chaves daqui são sempre string, mas o PHPStan não sabe disso
@@ -54,9 +60,7 @@ trait ValidaDocumentosDePessoa
 
             $cnpj = $this->input('ds_cnpj');
 
-            if (is_string($cnpj) && $cnpj !== '') {
-                $cnpjSoDigitos = Documento::apenasDigitos(Tipo::texto($cnpj));
-
+            if (is_scalar($cnpj) && ($cnpjSoDigitos = Documento::apenasDigitos(Tipo::texto($cnpj))) !== '') {
                 if (! Documento::cnpjEhValido($cnpjSoDigitos)) {
                     $validator->errors()->add('ds_cnpj', Tipo::texto(trans('validation.cnpj_invalido', [
                         'attribute' => str_replace('_', ' ', 'ds_cnpj'),

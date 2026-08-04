@@ -601,8 +601,118 @@ class PessoaControllerTest extends TestCase
         $resposta->assertStatus(422);
         $mensagem = $resposta->json('errors.ds_cpf')[0];
 
-        // A mensagem tem de ser frase, não a chave crua: storage/languages é produção.
-        $this->assertStringNotContainsString('validation.', $mensagem);
+        // Frase exata, não só "não é a chave crua": um assertStringNotContainsString
+        // teria passado com ":attribute" sem substituir -- foi exatamente o bug que essa
+        // asserção fraca deixou passar antes (ver task-7-report.md, "Desvio 2b").
+        $this->assertSame('The ds cpf is not a valid CPF.', $mensagem);
+    }
+
+    public function testCnpjComDigitoVerificadorInvalidoResponde422ComFrase()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste CNPJ',
+            'ds_login' => 'teste.http.cnpjruim',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => true,
+            // Dígito verificador não fecha (o CNPJ válido usado no resto da suíte termina
+            // em ...0191). O CNPJ ruim aqui só existe para provar o after() do validador.
+            'ds_cnpj' => '00000000000192',
+            'ds_nome_fantasia' => 'Http Teste CNPJ Fantasia',
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $mensagem = $resposta->json('errors.ds_cnpj')[0];
+
+        $this->assertSame('The ds cnpj is not a valid CNPJ.', $mensagem);
+    }
+
+    /**
+     * Critical 1 da revisão da Task 7: Hyperf\Validation\Concerns\ValidatesAttributes::
+     * validateDigits() faz `(string) $value` ANTES de medir, então um inteiro sem aspas no
+     * JSON ("ds_cpf": 12345678900) passa em digits:11 mesmo sem ser string. O trait de DV
+     * então guardava com is_string($cpf), que é falso pra um inteiro -- a checagem de
+     * dígito verificador era pulada inteira e a pessoa era criada com CPF inválido.
+     *
+     * Este teste tem de falhar se a guarda em ValidaDocumentosDePessoa voltar a ser
+     * is_string() -- ver mutation evidence no relatório da tarefa.
+     */
+    public function testCpfNumericoNoJsonNaoEscapaDoDigitoVerificador()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste CPF Numerico',
+            'ds_login' => 'teste.http.cpfnumerico',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste CPF Numerico Oficial',
+            'ds_cpf' => 12345678900,
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('ds_cpf', $resposta->json('errors'));
+    }
+
+    /**
+     * Mesmo bug do teste acima, lado CNPJ.
+     */
+    public function testCnpjNumericoNoJsonNaoEscapaDoDigitoVerificador()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste CNPJ Numerico',
+            'ds_login' => 'teste.http.cnpjnumerico',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => true,
+            'ds_cnpj' => 12345678901234,
+            'ds_nome_fantasia' => 'Http Teste CNPJ Numerico Fantasia',
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('ds_cnpj', $resposta->json('errors'));
+    }
+
+    /**
+     * Important 3 da revisão: string vazia só vira null nos dez campos novos de física
+     * (mais ds_sexo, que já é um deles) -- não nos campos pré-existentes. ds_cnpj não tem
+     * `nullable` na regra, então se a normalização convertesse "" para null aqui, o
+     * digits:14 passaria a rodar contra null e reprovar uma pessoa física que nunca
+     * deveria ter sido obrigada a informar CNPJ.
+     */
+    public function testCnpjVazioEmPessoaFisicaContinuaAceitoAposNormalizacao()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Cnpj Vazio',
+            'ds_login' => 'teste.http.cnpjvazio',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Cnpj Vazio Oficial',
+            'ds_cnpj' => '',
+        ], $this->headers());
+
+        $resposta->assertStatus(201);
+    }
+
+    /**
+     * Important 4 da revisão: os seis testes anteriores só batem em POST. Este cobre PATCH
+     * com uma das dez regras novas E o trait de DV, pra não deixar PUT/PATCH sem nenhuma
+     * cobertura própria.
+     */
+    public function testPatchComCpfDigitoVerificadorInvalidoResponde422()
+    {
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Patch CPF Ruim',
+            'ds_login' => 'teste.http.patchcpfruim',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Patch CPF Ruim Oficial',
+        ], $this->headers());
+
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $patch = $this->patch("/pessoas/{$cdPessoa}", [
+            'ds_cpf' => '12345678900',
+        ], $this->headers());
+
+        $patch->assertStatus(422);
+        $this->assertArrayHasKey('ds_cpf', $patch->json('errors'));
     }
 
     public function testSexoForaDoDominioResponde422()
