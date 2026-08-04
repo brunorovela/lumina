@@ -10,6 +10,7 @@ declare(strict_types=1);
  * @license  https://github.com/hyperf/hyperf/blob/master/LICENSE
  */
 use App\Controller\Auth\AuthController;
+use App\Controller\Dominio\DominioController;
 use App\Controller\Pessoa\PessoaController;
 use App\Enum\Privilegio;
 use App\Enum\Recurso;
@@ -68,3 +69,23 @@ Router::addGroup('/pessoas', function () {
         'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::DELETAR],
     ]);
 }, ['middleware' => [AuthMiddleware::class, AclMiddleware::class]]);
+
+// Catálogos que alimentam o cadastro de pessoa. Globais: nenhuma das tabelas tem
+// cd_cliente, então não há escopo de tenant aqui — ao contrário de /pessoas.
+// O ACL reusa GERENCIAR_PESSOA + ACESSAR porque é o único par existente em
+// ulms_recurso_privilegio para este domínio, e chave inventada nega tudo em silêncio.
+// Sem ValidationMiddleware nestas três: não recebem parâmetro nenhum.
+Router::get('/paises', [DominioController::class, 'paises'], [
+    'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
+    'middleware' => [AuthMiddleware::class, AclMiddleware::class],
+]);
+
+Router::get('/estados-civis', [DominioController::class, 'estadosCivis'], [
+    'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
+    'middleware' => [AuthMiddleware::class, AclMiddleware::class],
+]);
+
+Router::get('/contato-tipos', [DominioController::class, 'tiposDeContato'], [
+    'acl' => ['recurso' => Recurso::GERENCIAR_PESSOA, 'privilegio' => Privilegio::ACESSAR],
+    'middleware' => [AuthMiddleware::class, AclMiddleware::class],
+]);
