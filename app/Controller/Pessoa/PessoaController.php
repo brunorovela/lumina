@@ -37,10 +37,16 @@ class PessoaController extends AbstractController
     #[OA\Post(path: '/pessoas', summary: 'Cria uma nova pessoa para o cliente autenticado', tags: ['Pessoa'])]
     #[OA\RequestBody(
         required: true,
-        description: 'Nos dez campos novos de pessoa física (ds_nome_social, ds_nome_mae, ds_nome_pai, ds_identidade, '
+        description: 'Se sn_pessoa_juridica for true, os dez campos novos de física do payload são ignorados em silêncio '
+            . '(nada é gravado); se for false, ds_cnpj/ds_nome_fantasia são ignorados do mesmo jeito. '
+            . 'Login admin ou administrador (comparação exata, não prefixo) nunca tem física/jurídica gravada nem '
+            . 'devolvida, mesmo que os campos venham no payload. '
+            . 'Nos dez campos novos de pessoa física (ds_nome_social, ds_nome_mae, ds_nome_pai, ds_identidade, '
             . 'ds_orgao_estado, ds_identidade_orgao_exp, dt_identidade_expedicao, dt_nascimento, ds_sexo, cd_estado_civil), '
             . 'string vazia enviada é tratada como ausência de valor e vira null. '
-            . 'ds_cpf e ds_cnpj aceitam máscara ou número JSON sem aspas; são validados por dígito verificador e gravados/devolvidos sempre sem máscara.',
+            . 'ds_cpf e ds_cnpj aceitam máscara ou número JSON sem aspas; são validados por dígito verificador e '
+            . 'gravados/devolvidos sempre sem máscara — mas não estão na lista dos dez, então string vazia NELES dá 422, '
+            . 'não null; para limpar ds_cpf, envie null.',
         content: new OA\JsonContent(
             required: ['ds_nome', 'ds_login', 'ds_senha', 'sn_pessoa_juridica'],
             properties: [
@@ -49,7 +55,7 @@ class PessoaController extends AbstractController
                 new OA\Property(property: 'ds_senha', type: 'string', minLength: 6),
                 new OA\Property(property: 'sn_pessoa_juridica', type: 'boolean'),
                 new OA\Property(property: 'ds_nome_oficial', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = false'),
-                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '52998224725', nullable: true),
+                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas. String vazia dá 422 (não vira null); para limpar, envie null.', example: '52998224725', nullable: true),
                 new OA\Property(property: 'ds_cnpj', type: 'string', description: 'Obrigatório quando sn_pessoa_juridica = true. CNPJ com 14 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '00000000000191'),
                 new OA\Property(property: 'ds_nome_fantasia', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = true'),
                 new OA\Property(property: 'ds_nome_social', type: 'string', maxLength: 255, nullable: true, example: 'Ana'),
@@ -58,9 +64,9 @@ class PessoaController extends AbstractController
                 new OA\Property(property: 'ds_identidade', type: 'string', maxLength: 255, nullable: true, example: '123456789'),
                 new OA\Property(property: 'ds_orgao_estado', type: 'string', maxLength: 255, nullable: true, description: 'UF do órgão expedidor da identidade.', example: 'SP'),
                 new OA\Property(property: 'ds_identidade_orgao_exp', type: 'string', maxLength: 255, nullable: true, description: 'Órgão expedidor da identidade.', example: 'SSP'),
-                new OA\Property(property: 'dt_identidade_expedicao', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura nem anterior a dt_nascimento quando as duas vêm no mesmo payload.', example: '2015-03-01'),
+                new OA\Property(property: 'dt_identidade_expedicao', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura. Comparada com dt_nascimento só quando as duas vêm no MESMO payload — nesse caso não pode ser anterior a ela; enviada sozinha, não exige dt_nascimento.', example: '2015-03-01'),
                 new OA\Property(property: 'dt_nascimento', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura.', example: '1990-05-12'),
-                new OA\Property(property: 'ds_sexo', type: 'string', enum: ['f', 'm'], nullable: true, description: 'Só f, m ou null. F/M maiúsculo também são aceitos e gravados em minúsculo.', example: 'f'),
+                new OA\Property(property: 'ds_sexo', type: 'string', enum: ['f', 'm'], nullable: true, description: 'Só f, m ou null (espaços nas pontas são cortados; F/M maiúsculo também são aceitos e gravados em minúsculo).', example: 'f'),
                 new OA\Property(property: 'cd_estado_civil', type: 'integer', nullable: true, description: 'Código de saas_estado_civil; precisa existir na tabela. Rótulo em GET /estados-civis.', example: 37),
             ]
         )
@@ -93,8 +99,17 @@ class PessoaController extends AbstractController
     #[OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))]
     #[OA\RequestBody(
         required: true,
-        description: 'Mesmas regras de POST /pessoas para os campos de pessoa física, ds_cpf e ds_cnpj — inclusive o '
-            . 'empty-string-vira-null nos dez campos novos e a aceitação de máscara ou número JSON sem aspas em ds_cpf/ds_cnpj.',
+        description: 'Mesmas regras de valor de POST /pessoas para os campos de pessoa física, ds_cpf e ds_cnpj — '
+            . 'inclusive o empty-string-vira-null nos dez campos novos (exceto ds_cpf: string vazia nele dá 422, não '
+            . 'null), a aceitação de máscara ou número JSON sem aspas em ds_cpf/ds_cnpj, e o descarte silencioso dos '
+            . 'campos do tipo que a pessoa NÃO vai ser (física quando sn_pessoa_juridica=true, ou o contrário). Login '
+            . 'admin ou administrador nunca tem física/jurídica gravada nem devolvida, mesmo que os campos venham no '
+            . 'payload. '
+            . 'ATENÇÃO — PUT SUBSTITUI, MAS NÃO LIMPA POR OMISSÃO: um campo dos dez novos de física que fica DE FORA do '
+            . 'payload mantém o valor atual gravado; para apagar um deles, envie null explicitamente, não basta omitir. '
+            . 'ATENÇÃO — TROCAR O TIPO DESTRÓI DADO: um PUT que muda sn_pessoa_juridica apaga de vez a linha do tipo '
+            . 'antigo (unim_pessoa_fisica ou unim_pessoa_juridica) — virar jurídica destrói CPF e os dez campos novos '
+            . 'de física, sem confirmação e sem soft delete.',
         content: new OA\JsonContent(
             required: ['ds_nome', 'ds_login', 'sn_pessoa_juridica'],
             properties: [
@@ -102,19 +117,19 @@ class PessoaController extends AbstractController
                 new OA\Property(property: 'ds_login', type: 'string', maxLength: 100),
                 new OA\Property(property: 'ds_senha', type: 'string', minLength: 6, nullable: true),
                 new OA\Property(property: 'sn_pessoa_juridica', type: 'boolean'),
-                new OA\Property(property: 'ds_nome_oficial', type: 'string', maxLength: 255),
-                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '52998224725', nullable: true),
-                new OA\Property(property: 'ds_cnpj', type: 'string', description: 'CNPJ com 14 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '00000000000191'),
-                new OA\Property(property: 'ds_nome_fantasia', type: 'string', maxLength: 255),
+                new OA\Property(property: 'ds_nome_oficial', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = false'),
+                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas. String vazia dá 422 (não vira null); para limpar, envie null.', example: '52998224725', nullable: true),
+                new OA\Property(property: 'ds_cnpj', type: 'string', description: 'Obrigatório quando sn_pessoa_juridica = true. CNPJ com 14 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '00000000000191'),
+                new OA\Property(property: 'ds_nome_fantasia', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = true'),
                 new OA\Property(property: 'ds_nome_social', type: 'string', maxLength: 255, nullable: true, example: 'Ana'),
                 new OA\Property(property: 'ds_nome_mae', type: 'string', maxLength: 255, nullable: true, example: 'Maria Souza'),
                 new OA\Property(property: 'ds_nome_pai', type: 'string', maxLength: 255, nullable: true, example: 'Jose Souza'),
                 new OA\Property(property: 'ds_identidade', type: 'string', maxLength: 255, nullable: true, example: '123456789'),
                 new OA\Property(property: 'ds_orgao_estado', type: 'string', maxLength: 255, nullable: true, description: 'UF do órgão expedidor da identidade.', example: 'SP'),
                 new OA\Property(property: 'ds_identidade_orgao_exp', type: 'string', maxLength: 255, nullable: true, description: 'Órgão expedidor da identidade.', example: 'SSP'),
-                new OA\Property(property: 'dt_identidade_expedicao', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura nem anterior a dt_nascimento quando as duas vêm no mesmo payload.', example: '2015-03-01'),
+                new OA\Property(property: 'dt_identidade_expedicao', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura. Comparada com dt_nascimento só quando as duas vêm no MESMO payload — nesse caso não pode ser anterior a ela; enviada sozinha, não exige dt_nascimento.', example: '2015-03-01'),
                 new OA\Property(property: 'dt_nascimento', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura.', example: '1990-05-12'),
-                new OA\Property(property: 'ds_sexo', type: 'string', enum: ['f', 'm'], nullable: true, description: 'Só f, m ou null. F/M maiúsculo também são aceitos e gravados em minúsculo.', example: 'f'),
+                new OA\Property(property: 'ds_sexo', type: 'string', enum: ['f', 'm'], nullable: true, description: 'Só f, m ou null (espaços nas pontas são cortados; F/M maiúsculo também são aceitos e gravados em minúsculo).', example: 'f'),
                 new OA\Property(property: 'cd_estado_civil', type: 'integer', nullable: true, description: 'Código de saas_estado_civil; precisa existir na tabela. Rótulo em GET /estados-civis.', example: 37),
             ]
         )
@@ -123,7 +138,9 @@ class PessoaController extends AbstractController
         response: 200,
         description: 'Pessoa atualizada. A resposta ignora ?fields= e traz o registro completo, dado pessoal incluso — é o '
             . 'que o servidor gravou. CPF e CNPJ voltam sem máscara e ds_sexo em minúsculo, mesmo que enviados de outra '
-            . 'forma; nos dez campos novos de pessoa física, string vazia enviada volta como null.',
+            . 'forma; nos dez campos novos de pessoa física, string vazia enviada volta como null. '
+            . 'Campo dos dez novos que ficou DE FORA do payload mantém o valor gravado anteriormente — PUT não limpa por '
+            . 'omissão. Se sn_pessoa_juridica mudou, a linha do tipo antigo (física ou jurídica) foi apagada de vez.',
         content: new OA\JsonContent(
             properties: [
                 new OA\Property(property: 'success', type: 'boolean', example: true),
@@ -149,15 +166,20 @@ class PessoaController extends AbstractController
         required: true,
         description: 'Envie só os campos que quer trocar — nenhum é obrigatório aqui, mas o payload precisa ter ao menos '
             . 'um. Campo do tipo que a pessoa NÃO é (física em jurídica, ou o contrário) é ignorado em silêncio, e PATCH '
-            . 'nunca troca o tipo da pessoa. Mesmas regras de valor de POST /pessoas nos demais campos: nos dez campos '
-            . 'novos de pessoa física, string vazia vira null; ds_cpf/ds_cnpj aceitam máscara ou número JSON sem aspas.',
+            . 'nunca troca o tipo da pessoa nem apaga a linha do outro tipo. Campo omitido simplesmente não é tocado — '
+            . 'PATCH, ao contrário de PUT, não tem essa ambiguidade. Mesmas regras de valor de POST /pessoas nos demais '
+            . 'campos: nos dez campos novos de pessoa física, string vazia vira null (ds_cpf é exceção: string vazia dá '
+            . '422, não null; para limpar, envie null); ds_cpf/ds_cnpj aceitam máscara ou número JSON sem aspas. '
+            . 'ATENÇÃO: diferente de POST/PUT, PATCH não isenta os logins admin/administrador de física/jurídica — se a '
+            . 'pessoa já tiver sn_pessoa_juridica definido, os campos do tipo correspondente são gravados normalmente '
+            . 'também para essas contas.',
         content: new OA\JsonContent(
             properties: [
                 new OA\Property(property: 'ds_nome', type: 'string', maxLength: 255),
                 new OA\Property(property: 'ds_login', type: 'string', maxLength: 100),
                 new OA\Property(property: 'ds_senha', type: 'string', minLength: 6),
                 new OA\Property(property: 'ds_nome_oficial', type: 'string', maxLength: 255),
-                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '52998224725', nullable: true),
+                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas. String vazia dá 422 (não vira null); para limpar, envie null.', example: '52998224725', nullable: true),
                 new OA\Property(property: 'ds_cnpj', type: 'string', description: 'CNPJ com 14 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '00000000000191'),
                 new OA\Property(property: 'ds_nome_fantasia', type: 'string', maxLength: 255),
                 new OA\Property(property: 'ds_nome_social', type: 'string', maxLength: 255, nullable: true, example: 'Ana'),
@@ -166,9 +188,9 @@ class PessoaController extends AbstractController
                 new OA\Property(property: 'ds_identidade', type: 'string', maxLength: 255, nullable: true, example: '123456789'),
                 new OA\Property(property: 'ds_orgao_estado', type: 'string', maxLength: 255, nullable: true, description: 'UF do órgão expedidor da identidade.', example: 'SP'),
                 new OA\Property(property: 'ds_identidade_orgao_exp', type: 'string', maxLength: 255, nullable: true, description: 'Órgão expedidor da identidade.', example: 'SSP'),
-                new OA\Property(property: 'dt_identidade_expedicao', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura nem anterior a dt_nascimento quando as duas vêm no mesmo payload — a regra cruzada só é avaliada quando as duas datas vêm no mesmo PATCH.', example: '2015-03-01'),
+                new OA\Property(property: 'dt_identidade_expedicao', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura. Comparada com dt_nascimento só quando as duas vêm no MESMO PATCH — nesse caso não pode ser anterior a ela; enviada sozinha, não exige dt_nascimento.', example: '2015-03-01'),
                 new OA\Property(property: 'dt_nascimento', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura.', example: '1990-05-12'),
-                new OA\Property(property: 'ds_sexo', type: 'string', enum: ['f', 'm'], nullable: true, description: 'Só f, m ou null. F/M maiúsculo também são aceitos e gravados em minúsculo.', example: 'f'),
+                new OA\Property(property: 'ds_sexo', type: 'string', enum: ['f', 'm'], nullable: true, description: 'Só f, m ou null (espaços nas pontas são cortados; F/M maiúsculo também são aceitos e gravados em minúsculo).', example: 'f'),
                 new OA\Property(property: 'cd_estado_civil', type: 'integer', nullable: true, description: 'Código de saas_estado_civil; precisa existir na tabela. Rótulo em GET /estados-civis.', example: 37),
             ]
         )

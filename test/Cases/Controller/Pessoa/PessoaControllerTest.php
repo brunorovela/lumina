@@ -779,6 +779,56 @@ class PessoaControllerTest extends TestCase
         $this->assertArrayHasKey('dt_nascimento', $resposta->json('errors'));
     }
 
+    /**
+     * Critical da revisão da Task 9: `after_or_equal:dt_nascimento` na STRING de regras
+     * comparava contra o valor literal "dt_nascimento" quando o campo não vinha no
+     * payload -- isso não é uma data, então a comparação reprovava por não conseguir
+     * fazer parse, e um PATCH que só manda dt_identidade_expedicao tomava 422 sem
+     * nenhuma data estar de fato invertida. A checagem migrou para o after() do
+     * validador (ValidaDatasDePessoa) e só compara quando as DUAS datas vêm no mesmo
+     * payload.
+     */
+    public function testPatchComSoDtIdentidadeExpedicaoNaoExigeDtNascimento()
+    {
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Patch Data Isolada',
+            'ds_login' => 'teste.http.patchdataisolada',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Patch Data Isolada Oficial',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        $patch = $this->patch("/pessoas/{$cdPessoa}", [
+            'dt_identidade_expedicao' => '2015-03-01',
+        ], $this->headers());
+
+        $patch->assertStatus(200);
+        $this->assertSame('2015-03-01', $patch->json('data.fisica.dt_identidade_expedicao'));
+    }
+
+    /**
+     * Mesmo cenário do Critical, mas via POST: alguém com data de expedição de RG
+     * conhecida e data de nascimento desconhecida precisa conseguir cadastrar a
+     * primeira sem a segunda.
+     */
+    public function testCriaComSoDtIdentidadeExpedicaoNaoExigeDtNascimento()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Post Data Isolada',
+            'ds_login' => 'teste.http.postdataisolada',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Post Data Isolada Oficial',
+            'dt_identidade_expedicao' => '2015-03-01',
+        ], $this->headers());
+
+        $resposta->assertStatus(201);
+        $this->assertSame('2015-03-01', $resposta->json('data.fisica.dt_identidade_expedicao'));
+    }
+
     public function testCriaPessoaFisicaComOsDezCamposNovos()
     {
         $criar = $this->json('/pessoas', [

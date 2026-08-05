@@ -50,7 +50,9 @@ use Hyperf\Swagger\Annotation as OA;
                 new OA\Property(property: 'ds_identidade_orgao_exp', description: 'Órgão expedidor da identidade.', type: 'string', example: 'SSP', nullable: true),
                 new OA\Property(property: 'dt_identidade_expedicao', description: 'Data no formato Y-m-d. Não pode ser futura nem anterior a dt_nascimento quando as duas vêm no mesmo payload.', type: 'string', format: 'date', example: '2015-03-01', nullable: true),
                 new OA\Property(property: 'dt_nascimento', description: 'Data no formato Y-m-d, não pode ser futura. Dado pessoal: fora do default, só com fields explícito.', type: 'string', format: 'date', example: '1990-05-12', nullable: true),
-                new OA\Property(property: 'ds_sexo', description: 'Na escrita aceita apenas f, m ou null (F e M são aceitos e gravados em minúsculo). A LEITURA pode devolver outros valores: o banco legado tem dado fora desse domínio e a API não mente sobre o que está gravado.', type: 'string', enum: ['f', 'm'], example: 'f', nullable: true),
+                new OA\Property(property: 'ds_sexo', description: 'Na escrita aceita apenas f, m ou null (espaços nas pontas são cortados; F e M maiúsculo também são aceitos e gravados em minúsculo). '
+                    . 'A LEITURA pode devolver outros valores: o banco legado tem dado fora desse domínio (já visto: n, a, o, b e string vazia) e a API não mente sobre o que está gravado. '
+                    . 'Por isso este campo, aqui na LEITURA, não declara enum — um enum reprovaria exatamente os valores legados que a API precisa devolver. O enum f/m vale só para o corpo de POST/PUT/PATCH.', type: 'string', example: 'f', nullable: true),
                 new OA\Property(property: 'cd_estado_civil', description: 'Código de saas_estado_civil. Traduza o rótulo em GET /estados-civis — a leitura de pessoa devolve o código, não o nome.', type: 'integer', example: 37, nullable: true),
             ],
             type: 'object',

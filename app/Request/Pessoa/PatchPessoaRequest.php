@@ -13,6 +13,7 @@ declare(strict_types=1);
 namespace App\Request\Pessoa;
 
 use App\Request\Pessoa\Concerns\NormalizaCamposDePessoa;
+use App\Request\Pessoa\Concerns\ValidaDatasDePessoa;
 use App\Request\Pessoa\Concerns\ValidaDocumentosDePessoa;
 use App\Support\Tipo;
 use Hyperf\Contract\ValidatorInterface;
@@ -21,6 +22,7 @@ use Hyperf\Validation\Request\FormRequest;
 class PatchPessoaRequest extends FormRequest
 {
     use NormalizaCamposDePessoa;
+    use ValidaDatasDePessoa;
     use ValidaDocumentosDePessoa;
 
     public function authorize(): bool
@@ -47,7 +49,7 @@ class PatchPessoaRequest extends FormRequest
             'ds_identidade' => 'sometimes|nullable|string|max:255',
             'ds_orgao_estado' => 'sometimes|nullable|string|max:255',
             'ds_identidade_orgao_exp' => 'sometimes|nullable|string|max:255',
-            'dt_identidade_expedicao' => 'sometimes|nullable|date_format:Y-m-d|before_or_equal:today|after_or_equal:dt_nascimento',
+            'dt_identidade_expedicao' => 'sometimes|nullable|date_format:Y-m-d|before_or_equal:today',
             'dt_nascimento' => 'sometimes|nullable|date_format:Y-m-d|before_or_equal:today',
             'ds_sexo' => 'sometimes|nullable|in:f,m',
             'cd_estado_civil' => 'sometimes|nullable|integer|exists:saas_estado_civil,cd_estado_civil',
@@ -63,6 +65,7 @@ class PatchPessoaRequest extends FormRequest
         });
 
         $this->validarDocumentos($validator);
+        $this->validarDatas($validator);
     }
 
     /**
