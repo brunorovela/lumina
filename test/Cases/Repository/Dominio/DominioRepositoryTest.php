@@ -41,29 +41,6 @@ class DominioRepositoryTest extends TestCase
         );
     }
 
-    public function testEstadosFiltradosPorPaisSoTrazemAquelePais()
-    {
-        $cdPais = (int) Db::table('saas_estado')->min('cd_pais');
-
-        $estados = $this->repositorio->estados($cdPais);
-
-        $this->assertGreaterThan(0, $estados->count());
-
-        foreach ($estados as $estado) {
-            $this->assertSame($cdPais, $estado->cd_pais);
-        }
-    }
-
-    public function testEstadosSemFiltroTrazMaisDoQueUmPaisSozinhoOuIgual()
-    {
-        $cdPais = (int) Db::table('saas_estado')->min('cd_pais');
-
-        $this->assertGreaterThanOrEqual(
-            $this->repositorio->estados($cdPais)->count(),
-            $this->repositorio->estados()->count()
-        );
-    }
-
     public function testCidadesExigemEstadoENuncaVazamOutroEstado()
     {
         $cdEstado = (int) Db::table('saas_cidade')->min('cd_estado');

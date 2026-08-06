@@ -23,7 +23,7 @@ use Hyperf\Swagger\Annotation as OA;
         . 'e nenhuma relação (o que também poupa duas consultas por página). '
         . 'Para receber mais, peça explicitamente — `?fields=*` devolve o registro completo.',
     properties: [
-        new OA\Property(property: 'cd_pessoa', type: 'integer', example: 1512099),
+        new OA\Property(property: 'cd_pessoa', description: 'Identificador da pessoa. É o :id de GET/PUT/PATCH/DELETE /pessoas/{id}.', type: 'integer', example: 1512099),
         new OA\Property(property: 'ds_nome', type: 'string', example: 'Ana Souza', nullable: true),
         new OA\Property(property: 'ds_login', type: 'string', example: 'ana.souza', nullable: true),
         new OA\Property(property: 'sn_pessoa_juridica', type: 'boolean', example: false, nullable: true),

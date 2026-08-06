@@ -41,8 +41,8 @@ class UpdatePessoaRequest extends FormRequest
             'ds_senha' => 'nullable|string|min:6',
             'sn_pessoa_juridica' => 'required|boolean',
             'ds_nome_oficial' => 'required_if:sn_pessoa_juridica,false|string|max:255',
-            'ds_cpf' => 'nullable|digits:11',
-            'ds_cnpj' => 'required_if:sn_pessoa_juridica,true|digits:14',
+            'ds_cpf' => 'nullable|regex:/^\d{11}$/',
+            'ds_cnpj' => 'required_if:sn_pessoa_juridica,true|regex:/^\d{14}$/',
             'ds_nome_fantasia' => 'required_if:sn_pessoa_juridica,true|string|max:255',
             'ds_nome_social' => 'nullable|string|max:255',
             'ds_nome_mae' => 'nullable|string|max:255',
@@ -61,6 +61,21 @@ class UpdatePessoaRequest extends FormRequest
     {
         $this->validarDocumentos($validator);
         $this->validarDatas($validator);
+    }
+
+    /**
+     * `regex` (Critical 1 da revisão final) não tem mensagem própria como `digits` tinha —
+     * cairia no genérico "The :attribute format is invalid.". Mensagem explícita preserva a
+     * frase que o cliente da API já lia antes da troca de regra.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'ds_cpf.regex' => 'The ds cpf must be 11 digits.',
+            'ds_cnpj.regex' => 'The ds cnpj must be 14 digits.',
+        ];
     }
 
     /**

@@ -45,9 +45,12 @@ class PessoaController extends AbstractController
             . 'Nos dez campos novos de pessoa física (ds_nome_social, ds_nome_mae, ds_nome_pai, ds_identidade, '
             . 'ds_orgao_estado, ds_identidade_orgao_exp, dt_identidade_expedicao, dt_nascimento, ds_sexo, cd_estado_civil), '
             . 'string vazia enviada é tratada como ausência de valor e vira null. '
-            . 'ds_cpf e ds_cnpj aceitam máscara ou número JSON sem aspas; são validados por dígito verificador e '
-            . 'gravados/devolvidos sempre sem máscara — mas não estão na lista dos dez, então string vazia NELES dá 422, '
-            . 'não null; para limpar ds_cpf, envie null.',
+            . 'ds_cpf e ds_cnpj aceitam máscara ou número JSON sem aspas (o número é validado por dígito verificador '
+            . 'igual à string); são gravados/devolvidos sempre sem máscara. ds_cpf entrou na mesma regra dos dez '
+            . 'campos novos: string vazia é tratada como ausência de valor e vira null (mesmo efeito de enviar null '
+            . 'explicitamente), mas um valor não vazio que não sobra em dígitos (ex.: "abc") é rejeitado com 422, não '
+            . 'descartado em silêncio. ds_cnpj é diferente: continua fora dessa lista, então string vazia nele '
+            . 'reprova a validação (required_if quando sn_pessoa_juridica=true), não vira null.',
         content: new OA\JsonContent(
             required: ['ds_nome', 'ds_login', 'ds_senha', 'sn_pessoa_juridica'],
             properties: [
@@ -56,7 +59,7 @@ class PessoaController extends AbstractController
                 new OA\Property(property: 'ds_senha', type: 'string', minLength: 6),
                 new OA\Property(property: 'sn_pessoa_juridica', type: 'boolean'),
                 new OA\Property(property: 'ds_nome_oficial', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = false'),
-                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas. String vazia dá 422 (não vira null); para limpar, envie null.', example: '52998224725', nullable: true),
+                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas — nos dois casos o valor é validado por dígito verificador. String vazia é tratada como ausência de valor e vira null (mesmo efeito de enviar null); valor não vazio que não sobra em dígitos (ex.: "abc") é rejeitado com 422.', example: '52998224725', nullable: true),
                 new OA\Property(property: 'ds_cnpj', type: 'string', description: 'Obrigatório quando sn_pessoa_juridica = true. CNPJ com 14 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '00000000000191'),
                 new OA\Property(property: 'ds_nome_fantasia', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = true'),
                 new OA\Property(property: 'ds_nome_social', type: 'string', maxLength: 255, nullable: true, example: 'Ana'),
@@ -101,8 +104,10 @@ class PessoaController extends AbstractController
     #[OA\RequestBody(
         required: true,
         description: 'Mesmas regras de valor de POST /pessoas para os campos de pessoa física, ds_cpf e ds_cnpj — '
-            . 'inclusive o empty-string-vira-null nos dez campos novos (exceto ds_cpf: string vazia nele dá 422, não '
-            . 'null), a aceitação de máscara ou número JSON sem aspas em ds_cpf/ds_cnpj, e o descarte silencioso dos '
+            . 'inclusive o empty-string-vira-null nos dez campos novos mais ds_cpf (ds_cnpj é a exceção: string '
+            . 'vazia nele reprova a validação — required_if quando sn_pessoa_juridica=true —, não vira null), a '
+            . 'aceitação de máscara ou número JSON sem aspas em ds_cpf/ds_cnpj (validado por dígito verificador nos '
+            . 'dois formatos), e o descarte silencioso dos '
             . 'campos do tipo que a pessoa NÃO vai ser (física quando sn_pessoa_juridica=true, ou o contrário). Login '
             . 'admin ou administrador nunca tem física/jurídica GRAVADA por esta API, mesmo que os campos venham no '
             . 'payload — mas pode aparecer com fisica/juridica preenchida na resposta se já existir dado órfão de '
@@ -120,7 +125,7 @@ class PessoaController extends AbstractController
                 new OA\Property(property: 'ds_senha', type: 'string', minLength: 6, nullable: true),
                 new OA\Property(property: 'sn_pessoa_juridica', type: 'boolean'),
                 new OA\Property(property: 'ds_nome_oficial', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = false'),
-                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas. String vazia dá 422 (não vira null); para limpar, envie null.', example: '52998224725', nullable: true),
+                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas — nos dois casos o valor é validado por dígito verificador. String vazia é tratada como ausência de valor e vira null (mesmo efeito de enviar null); valor não vazio que não sobra em dígitos (ex.: "abc") é rejeitado com 422.', example: '52998224725', nullable: true),
                 new OA\Property(property: 'ds_cnpj', type: 'string', description: 'Obrigatório quando sn_pessoa_juridica = true. CNPJ com 14 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '00000000000191'),
                 new OA\Property(property: 'ds_nome_fantasia', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = true'),
                 new OA\Property(property: 'ds_nome_social', type: 'string', maxLength: 255, nullable: true, example: 'Ana'),
@@ -170,8 +175,9 @@ class PessoaController extends AbstractController
             . 'um. Campo do tipo que a pessoa NÃO é (física em jurídica, ou o contrário) é ignorado em silêncio, e PATCH '
             . 'nunca troca o tipo da pessoa nem apaga a linha do outro tipo. Campo omitido simplesmente não é tocado — '
             . 'PATCH, ao contrário de PUT, não tem essa ambiguidade. Mesmas regras de valor de POST /pessoas nos demais '
-            . 'campos: nos dez campos novos de pessoa física, string vazia vira null (ds_cpf é exceção: string vazia dá '
-            . '422, não null; para limpar, envie null); ds_cpf/ds_cnpj aceitam máscara ou número JSON sem aspas. '
+            . 'campos: nos dez campos novos de pessoa física mais ds_cpf, string vazia vira null (mesmo efeito de '
+            . 'enviar null; ds_cnpj é a exceção, string vazia nele reprova a validação); ds_cpf/ds_cnpj aceitam '
+            . 'máscara ou número JSON sem aspas, validado por dígito verificador nos dois formatos. '
             . 'ATENÇÃO: diferente de POST/PUT, PATCH não isenta os logins admin/administrador de física/jurídica — se a '
             . 'pessoa já tiver sn_pessoa_juridica definido, os campos do tipo correspondente são gravados normalmente '
             . 'também para essas contas.',
@@ -181,7 +187,7 @@ class PessoaController extends AbstractController
                 new OA\Property(property: 'ds_login', type: 'string', maxLength: 100),
                 new OA\Property(property: 'ds_senha', type: 'string', minLength: 6),
                 new OA\Property(property: 'ds_nome_oficial', type: 'string', maxLength: 255),
-                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas. String vazia dá 422 (não vira null); para limpar, envie null.', example: '52998224725', nullable: true),
+                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas — nos dois casos o valor é validado por dígito verificador. String vazia é tratada como ausência de valor e vira null (mesmo efeito de enviar null); valor não vazio que não sobra em dígitos (ex.: "abc") é rejeitado com 422.', example: '52998224725', nullable: true),
                 new OA\Property(property: 'ds_cnpj', type: 'string', description: 'CNPJ com 14 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '00000000000191'),
                 new OA\Property(property: 'ds_nome_fantasia', type: 'string', maxLength: 255),
                 new OA\Property(property: 'ds_nome_social', type: 'string', maxLength: 255, nullable: true, example: 'Ana'),

@@ -40,8 +40,8 @@ class PatchPessoaRequest extends FormRequest
             'ds_login' => 'sometimes|string|max:100',
             'ds_senha' => 'sometimes|string|min:6',
             'ds_nome_oficial' => 'sometimes|string|max:255',
-            'ds_cpf' => 'sometimes|nullable|digits:11',
-            'ds_cnpj' => 'sometimes|digits:14',
+            'ds_cpf' => 'sometimes|nullable|regex:/^\d{11}$/',
+            'ds_cnpj' => 'sometimes|regex:/^\d{14}$/',
             'ds_nome_fantasia' => 'sometimes|string|max:255',
             'ds_nome_social' => 'sometimes|nullable|string|max:255',
             'ds_nome_mae' => 'sometimes|nullable|string|max:255',
@@ -66,6 +66,21 @@ class PatchPessoaRequest extends FormRequest
 
         $this->validarDocumentos($validator);
         $this->validarDatas($validator);
+    }
+
+    /**
+     * `regex` (Critical 1 da revisão final) não tem mensagem própria como `digits` tinha —
+     * cairia no genérico "The :attribute format is invalid.". Mensagem explícita preserva a
+     * frase que o cliente da API já lia antes da troca de regra.
+     *
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'ds_cpf.regex' => 'The ds cpf must be 11 digits.',
+            'ds_cnpj.regex' => 'The ds cnpj must be 14 digits.',
+        ];
     }
 
     /**

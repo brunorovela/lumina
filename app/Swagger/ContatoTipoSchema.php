@@ -22,7 +22,7 @@ use Hyperf\Swagger\Annotation as OA;
     description: 'Tipo de contato do catálogo global unim_pessoa_contato_tipo. As chaves são '
         . 'as do LMS: TELEFONE, TELEFONE-COMERCIAL, TELEFONE-CELULAR, EMAIL, SITE.',
     properties: [
-        new OA\Property(property: 'cd_tipo', type: 'integer', example: 34),
+        new OA\Property(property: 'cd_tipo', description: 'Código em unim_pessoa_contato_tipo. É o valor que o cadastro de contato exige.', type: 'integer', example: 34),
         new OA\Property(property: 'ds_descricao', type: 'string', example: 'E-mail'),
         new OA\Property(property: 'ds_chave', type: 'string', example: 'EMAIL'),
     ],

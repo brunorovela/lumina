@@ -23,7 +23,7 @@ use Hyperf\Swagger\Annotation as OA;
         . 'Um campo inexistente em ?fields= e um campo não permitido (ds_senha) recebem a MESMA mensagem, '
         . 'de propósito: a resposta não revela quais colunas existem no banco.',
     properties: [
-        new OA\Property(property: 'success', type: 'boolean', example: false),
+        new OA\Property(property: 'success', description: 'Sempre false neste envelope.', type: 'boolean', example: false),
         new OA\Property(property: 'message', type: 'string', example: 'Dados inválidos.'),
         new OA\Property(
             property: 'errors',

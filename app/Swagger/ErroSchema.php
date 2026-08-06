@@ -21,7 +21,7 @@ use Hyperf\Swagger\Annotation as OA;
     schema: 'Erro',
     description: 'Envelope de erro sem detalhe por campo. Montado por App\Support\ApiResponse::erro().',
     properties: [
-        new OA\Property(property: 'success', type: 'boolean', example: false),
+        new OA\Property(property: 'success', description: 'Sempre false neste envelope.', type: 'boolean', example: false),
         new OA\Property(property: 'message', description: 'Mensagem pronta para exibição.', type: 'string', example: 'Sem permissão para esta ação.'),
     ],
     type: 'object'

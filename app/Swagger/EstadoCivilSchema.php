@@ -23,7 +23,7 @@ use Hyperf\Swagger\Annotation as OA;
         . 'de fisica.cd_estado_civil: use esta rota para traduzir o código, porque a leitura '
         . 'de pessoa devolve o código e não o rótulo.',
     properties: [
-        new OA\Property(property: 'cd_estado_civil', type: 'integer', example: 37),
+        new OA\Property(property: 'cd_estado_civil', description: 'Código em saas_estado_civil. É o valor gravado em fisica.cd_estado_civil.', type: 'integer', example: 37),
         new OA\Property(property: 'ds_estado_civil', type: 'string', example: 'Solteiro(a)', nullable: true),
     ],
     type: 'object'

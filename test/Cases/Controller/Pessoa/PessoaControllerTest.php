@@ -691,6 +691,122 @@ class PessoaControllerTest extends TestCase
     }
 
     /**
+     * Contraponto do teste acima: em pessoa JURÍDICA, ds_cnpj vazio continua reprovado,
+     * porque ds_cnpj não entrou em CAMPOS_VAZIO_VIRA_NULO (Critical 2 da revisão final) --
+     * required_if precisa VER a string vazia para reprovar corretamente uma pessoa jurídica
+     * sem CNPJ. Se alguém um dia adicionar ds_cnpj à lista por engano, este teste vira 201
+     * onde deveria ser 422.
+     */
+    public function testDsCnpjVazioEmPessoaJuridicaContinuaReprovadoCom422()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Cnpj Vazio Juridica',
+            'ds_login' => 'teste.http.cnpjvaziojuridica',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => true,
+            'ds_cnpj' => '',
+            'ds_nome_fantasia' => 'Http Teste Cnpj Vazio Juridica Fantasia',
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('ds_cnpj', $resposta->json('errors'));
+    }
+
+    /**
+     * Critical 2 da revisão final, metade comportamental: ds_cpf entrou em
+     * CAMPOS_VAZIO_VIRA_NULO -- string vazia enviada precisa gravar null (não ''), o mesmo
+     * contrato dos dez campos novos de física.
+     */
+    public function testDsCpfVazioViraNullAoGravar()
+    {
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Cpf Vazio Vira Null',
+            'ds_login' => 'teste.http.cpfvazionull',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Cpf Vazio Vira Null Oficial',
+            'ds_cpf' => '',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $this->assertNull($criar->json('data.fisica.ds_cpf'));
+
+        $linha = Db::table('unim_pessoa_fisica')->where('cd_pessoa', $criar->json('data.cd_pessoa'))->first();
+        $this->assertNull($linha->ds_cpf);
+    }
+
+    /**
+     * Critical 2 da revisão final: "abc" não é vazio e não é dígito nenhum -- tem de
+     * continuar "abc" depois da normalização e reprovar a regra de formato com 422, não ser
+     * silenciosamente esvaziado para "" (que, por ds_cpf estar em CAMPOS_VAZIO_VIRA_NULO,
+     * viraria null e passaria batido).
+     */
+    public function testDsCpfComLixoNaoNumericoResponde422()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Cpf Lixo',
+            'ds_login' => 'teste.http.cpflixo',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Cpf Lixo Oficial',
+            'ds_cpf' => 'abc',
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('ds_cpf', $resposta->json('errors'));
+    }
+
+    /**
+     * Critical 1 da revisão final: `digits:11` chamava `(string) $value` sem guarda dentro
+     * de Hyperf\Validation\Concerns\ValidatesAttributes::validateDigits() -- um array como
+     * valor ("ds_cpf": []) disparava um E_WARNING de conversão de array para string, que
+     * ErrorExceptionHandler transformava em 500. A regra trocou para `regex`, que guarda com
+     * is_string()/is_numeric() e reprova (422) em vez de espatifar.
+     *
+     * Verificado por mutação: trocar `regex:/^\d{11}$/` de volta para `digits:11` em
+     * CreatePessoaRequest faz este teste falhar com 500 em vez de 422 (ver relatório final).
+     */
+    public function testDsCpfComArrayRetorna422NaoMais500()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Cpf Array',
+            'ds_login' => 'teste.http.cpfarray',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Cpf Array Oficial',
+            'ds_cpf' => [],
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('ds_cpf', $resposta->json('errors'));
+    }
+
+    /**
+     * Mesmo bug do teste acima, lado CNPJ -- mas em pessoa FÍSICA de propósito, não
+     * jurídica. Em pessoa jurídica (sn_pessoa_juridica=true), um ds_cnpj=[] falha
+     * `required_if` por estar "vazio" (Validator::shouldStopValidating() trata array vazio
+     * como falha da regra implícita e PULA as regras seguintes do mesmo atributo) -- a
+     * regra de formato (digits/regex) nunca chega a rodar, e o teste passaria com 422 nos
+     * dois regimes, sem provar nada sobre a troca de digits para regex. Em pessoa física,
+     * `required_if` não se aplica (condição falsa, sempre "passa"), então a regra de
+     * formato roda de verdade contra o array -- é aqui que digits:14 quebrava com 500.
+     */
+    public function testDsCnpjComArrayEmPessoaFisicaRetorna422NaoMais500()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Cnpj Array',
+            'ds_login' => 'teste.http.cnpjarray',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Cnpj Array Oficial',
+            'ds_cnpj' => [],
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('ds_cnpj', $resposta->json('errors'));
+    }
+
+    /**
      * Important 4 da revisão: os seis testes anteriores só batem em POST. Este cobre PATCH
      * com uma das dez regras novas E o trait de DV, pra não deixar PUT/PATCH sem nenhuma
      * cobertura própria.

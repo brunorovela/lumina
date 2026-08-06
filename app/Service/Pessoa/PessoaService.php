@@ -29,8 +29,8 @@ class PessoaService
      * e atualizarParcial() (PATCH) leem daqui.
      *
      * Antes eram duas listas literais separadas, e é assim que ds_cnpj acabou gravado em
-     * pessoa física (Finding 14). Com treze colunas em jogo, manter duas listas em sincronia
-     * na mão não é uma aposta razoável.
+     * pessoa física (Finding 14). Com doze colunas em jogo (as onze de CAMPOS_FISICA mais
+     * ds_nome_oficial), manter duas listas em sincronia na mão não é uma aposta razoável.
      *
      * ds_nome_oficial fica FORA: é obrigatório para pessoa física e tratado à parte em
      * separarDados(), com regra própria.
@@ -129,7 +129,7 @@ class PessoaService
         }
 
         // Campos do tipo que a pessoa NÃO é são ignorados silenciosamente, mesmo que venham
-        // no payload. Com treze colunas de física em jogo, a lista vem da constante — duas
+        // no payload. Com doze colunas de física em jogo, a lista vem da constante — duas
         // listas literais foi como ds_cnpj entrou em pessoa física (Finding 14).
         $dadosFisica = $pessoaAtual->sn_pessoa_juridica
             ? []
