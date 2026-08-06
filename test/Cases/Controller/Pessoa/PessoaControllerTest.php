@@ -569,6 +569,63 @@ class PessoaControllerTest extends TestCase
         $this->assertSame('12345678909', $porCuringa->json('data.fisica.ds_cpf'));
     }
 
+    /**
+     * Important 3 da revisão final: todo teste de "não encontrado" da suíte usava
+     * cd_pessoa = 999999, uma linha que não existe em NENHUM cliente -- isso passaria
+     * mesmo se PessoaRepository::buscarPorId() perdesse o ->where('cd_cliente', ...), já
+     * que a linha simplesmente não existe em lugar nenhum. Esta branch colocou quatro
+     * campos de PII (ds_cpf, ds_identidade, ds_nome_mae, ds_nome_pai) atrás desse único
+     * WHERE sem guarda própria -- o teste de isolamento cross-tenant precisa criar uma
+     * pessoa que EXISTE, só que de outro cliente, e provar que ela não vaza.
+     *
+     * Verificado por mutação: comentar o ->where('cd_cliente', $cdCliente) em
+     * PessoaRepository::buscarPorId() faz este teste falhar (200 com fisica.ds_cpf
+     * vazando), confirmando que ele de fato prende a regressão.
+     */
+    public function testDetalheDeOutroTenantRetorna404ENaoVazaFisica()
+    {
+        $criar = $this->json('/pessoas', [
+            'ds_nome' => 'Http Teste Cross Tenant',
+            'ds_login' => 'teste.http.crosstenant',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_nome_oficial' => 'Http Teste Cross Tenant Oficial',
+            'ds_cpf' => '52998224725',
+        ], $this->headers());
+
+        $criar->assertStatus(201);
+        $cdPessoa = $criar->json('data.cd_pessoa');
+
+        // Segundo tenant fabricado direto no Redis, mesmo padrão de
+        // EndToEndFlowTest::testIsolamentoCrossTenantPessoaDeUmClienteNaoApareceParaOutro
+        // -- cd_cliente inexistente não precisa ter linha no banco, só precisa ser
+        // diferente do tenant que criou a pessoa.
+        $redis = $this->getContainer()->get(Redis::class);
+        $cdPerfilOutroTenant = 900003;
+        $tokenOutroTenant = bin2hex(random_bytes(32));
+
+        $redis->setex("session:{$tokenOutroTenant}", 3600, json_encode([
+            'cd_pessoa' => 1,
+            'cd_cliente' => TenantDeTeste::cdClienteInexistente(),
+            'cd_perfis' => [$cdPerfilOutroTenant],
+        ]));
+        $redis->setex("acl:perfil:{$cdPerfilOutroTenant}", 3600, json_encode([
+            Recurso::GERENCIAR_PESSOA->value => [Privilegio::ACESSAR->value],
+        ]));
+
+        $headersOutroTenant = ['Authorization' => "Bearer {$tokenOutroTenant}"];
+
+        // pedindo fisica.* explicitamente: se o filtro de tenant vazar, é exatamente aqui
+        // que o ds_cpf apareceria.
+        $buscar = $this->get("/pessoas/{$cdPessoa}", ['fields' => 'fisica.*'], $headersOutroTenant);
+
+        $buscar->assertStatus(404);
+        $this->assertArrayNotHasKey('data', $buscar->json());
+
+        $redis->del("session:{$tokenOutroTenant}");
+        $redis->del("acl:perfil:{$cdPerfilOutroTenant}");
+    }
+
     public function testCpfComMascaraPassaPelaRegraDigits()
     {
         // A normalização roda em validationData(), ANTES das regras: sem ela, "123.456.789-09"

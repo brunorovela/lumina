@@ -38,7 +38,10 @@ class PessoaResourceTest extends TestCase
 
         $saida = PessoaResource::um($pessoa);
 
-        $this->assertEquals([
+        // assertSame, não assertEquals: o array esperado tem dez expectativas `null` que
+        // assertEquals deixaria passar contra '', 0 ou false (comparação frouxa) -- o
+        // ponto do teste é provar o contrato exato do valor devolvido, não só sua forma.
+        $this->assertSame([
             'cd_pessoa' => 7,
             'cd_cliente' => 20,
             'ds_nome' => 'Ana',

@@ -276,7 +276,9 @@ Se o `ALTER` não for aprovado, esta entrega faz tudo menos os passos 2 e 3. Os 
 
 ## LGPD
 
-`ds_cpf`, `ds_identidade`, `ds_nome_mae`, `ds_nome_pai` e `dt_nascimento` são dado pessoal. A decisão 4 os tira do default do detalhe: passam a exigir pedido nominal ou curinga. O efeito prático é que o log de acesso mostra quem pediu PII, porque pediu por escrito.
+`ds_cpf`, `ds_identidade`, `ds_nome_mae`, `ds_nome_pai` e `dt_nascimento` são dado pessoal. A decisão 4 os tira do default do detalhe: passam a exigir pedido nominal ou curinga.
+
+CORREÇÃO (revisão final): a frase anterior aqui afirmava que "o log de acesso mostra quem pediu PII, porque pediu por escrito" — isso é falso. Esta entrega não adiciona nenhum log de acesso/auditoria a `?fields=`, e `DbQueryExecutedListener` (a única coisa no projeto que loga SQL) para de rodar quando `APP_ENV=production` justamente para não expor PII em log, por design — o que é o oposto de um mecanismo de auditoria de quem pediu o quê. `sensivel` é um controle de discoverability e tamanho de payload (PII não aparece por acidente num `SELECT *` implícito, precisa ser pedida por nome ou curinga), não um controle de auditoria. Se auditoria de acesso a PII vier a ser necessária, é trabalho novo, não algo que já existe aqui.
 
 Não há máscara na leitura. Mascarar o mesmo campo conforme o `fields` faria a mesma chave devolver valores diferentes, e um cliente gravaria o valor mascarado de volta num `PUT`.
 

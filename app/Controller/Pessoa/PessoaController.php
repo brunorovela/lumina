@@ -90,7 +90,15 @@ class PessoaController extends AbstractController
     )]
     #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
-    #[OA\Response(response: 409, description: 'Já existe pessoa com esse login para este cliente', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(
+        response: 409,
+        description: 'Já existe pessoa com esse login para este cliente. Mesma resposta (mesma mensagem) para uma '
+            . 'violação de chave estrangeira em qualquer coluna FK do payload (SQLSTATE 23000, mapeado para 409 por '
+            . 'App\Exception\Handler\DatabaseExceptionHandler) — hoje só cd_estado_civil tem guarda própria (regra '
+            . 'exists, vira 422 antes de chegar ao banco); qualquer outra FK sem essa guarda cai aqui, indistinguível '
+            . 'de login duplicado.',
+        content: new OA\JsonContent(ref: '#/components/schemas/Erro')
+    )]
     #[OA\Response(response: 422, description: 'Dados inválidos', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function criar(CreatePessoaRequest $request): ResponseInterface
     {
@@ -159,6 +167,15 @@ class PessoaController extends AbstractController
     #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 404, description: 'Pessoa não encontrada', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(
+        response: 409,
+        description: 'Já existe pessoa com esse login para este cliente. Mesma resposta (mesma mensagem) para uma '
+            . 'violação de chave estrangeira em qualquer coluna FK do payload (SQLSTATE 23000, mapeado para 409 por '
+            . 'App\Exception\Handler\DatabaseExceptionHandler) — hoje só cd_estado_civil tem guarda própria (regra '
+            . 'exists, vira 422 antes de chegar ao banco); qualquer outra FK sem essa guarda cai aqui, indistinguível '
+            . 'de login duplicado.',
+        content: new OA\JsonContent(ref: '#/components/schemas/Erro')
+    )]
     #[OA\Response(response: 422, description: 'Dados inválidos', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function atualizar(int $id, UpdatePessoaRequest $request): ResponseInterface
     {
@@ -180,7 +197,9 @@ class PessoaController extends AbstractController
             . 'máscara ou número JSON sem aspas, validado por dígito verificador nos dois formatos. '
             . 'ATENÇÃO: diferente de POST/PUT, PATCH não isenta os logins admin/administrador de física/jurídica — se a '
             . 'pessoa já tiver sn_pessoa_juridica definido, os campos do tipo correspondente são gravados normalmente '
-            . 'também para essas contas.',
+            . 'também para essas contas. sn_pessoa_juridica é nullable, e quando a pessoa ainda não tem esse valor '
+            . 'definido (null), atualizarParcial() trata null como falso — a pessoa é tratada como física e os campos '
+            . 'de física são gravados normalmente, mesmo para admin/administrador.',
         content: new OA\JsonContent(
             properties: [
                 new OA\Property(property: 'ds_nome', type: 'string', maxLength: 255),
@@ -222,6 +241,15 @@ class PessoaController extends AbstractController
     #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 404, description: 'Pessoa não encontrada', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(
+        response: 409,
+        description: 'Já existe pessoa com esse login para este cliente. Mesma resposta (mesma mensagem) para uma '
+            . 'violação de chave estrangeira em qualquer coluna FK do payload (SQLSTATE 23000, mapeado para 409 por '
+            . 'App\Exception\Handler\DatabaseExceptionHandler) — hoje só cd_estado_civil tem guarda própria (regra '
+            . 'exists, vira 422 antes de chegar ao banco); qualquer outra FK sem essa guarda cai aqui, indistinguível '
+            . 'de login duplicado.',
+        content: new OA\JsonContent(ref: '#/components/schemas/Erro')
+    )]
     #[OA\Response(response: 422, description: 'Dados inválidos (ou nenhum campo enviado)', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function atualizarParcial(int $id, PatchPessoaRequest $request): ResponseInterface
     {
@@ -289,14 +317,19 @@ class PessoaController extends AbstractController
     #[OA\Response(
         response: 200,
         description: 'Lista paginada. Sem ?fields=, cada item traz apenas os campos de PessoaResumida; '
-            . 'com ?fields= (ou fields=*), cada item segue o schema Pessoa recortado pelo que foi pedido.',
+            . 'com ?fields= (ou fields=*), cada item segue o schema Pessoa recortado pelo que foi pedido — por isso '
+            . 'o item é oneOf[PessoaResumida, Pessoa] e não um $ref fixo: um cliente gerado a partir deste schema '
+            . 'que travasse em PessoaResumida rejeitaria qualquer resposta a ?fields=fisica.*.',
         content: new OA\JsonContent(
             properties: [
                 new OA\Property(property: 'success', type: 'boolean', example: true),
                 new OA\Property(
                     property: 'data',
                     type: 'array',
-                    items: new OA\Items(ref: '#/components/schemas/PessoaResumida')
+                    items: new OA\Items(oneOf: [
+                        new OA\Schema(ref: '#/components/schemas/PessoaResumida'),
+                        new OA\Schema(ref: '#/components/schemas/Pessoa'),
+                    ])
                 ),
                 new OA\Property(property: 'meta', ref: '#/components/schemas/MetaPaginacao'),
             ],

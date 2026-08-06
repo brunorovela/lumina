@@ -28,10 +28,28 @@ final class MapaDeCamposPessoa
     public const CHAVE_LOCAL = 'cd_pessoa';
 
     /**
-     * MANUTENÇÃO: campo novo aqui também precisa entrar na descrição do #[OA\Parameter(name: 'fields')]
-     * dos DOIS endpoints de leitura em App\Controller\Pessoa\PessoaController (listar e buscar) —
-     * atributo PHP exige expressão constante, então a lista de campos do Swagger não pode ser
-     * derivada deste mapa e nada força as duas a acompanharem.
+     * MANUTENÇÃO: campo novo de pessoa física é NOVE edições, não três — nada aqui deriva
+     * automaticamente do resto porque atributo PHP exige expressão constante (Swagger) e
+     * porque mapa, regras de validação e schema do banco são coisas fisicamente separadas.
+     * Esquecer CAMPOS_FISICA é o pior caso: falha muda (201 normal, campo simplesmente
+     * nunca grava).
+     *
+     * 1. Este mapa (mapa()).
+     * 2. App\Swagger\PessoaSchema (e PessoaResumidaSchema, se o campo entrar no default enxuto).
+     * 3. A descrição do #[OA\Parameter(name: 'fields')] dos DOIS endpoints de leitura em
+     *    App\Controller\Pessoa\PessoaController (listar e buscar).
+     * 4. A lista de properties do requestBody nos TRÊS verbos de escrita em PessoaController
+     *    (criar/atualizar/atualizarParcial).
+     * 5. rules() nas TRÊS classes de request (Create/Update/PatchPessoaRequest).
+     * 6. App\Service\Pessoa\PessoaService::CAMPOS_FISICA — sem entrar aqui, o campo valida,
+     *    responde 201/200, e nunca é gravado (falha SILENCIOSA, não dá erro nenhum).
+     * 7. App\Request\Pessoa\Concerns\NormalizaCamposDePessoa::CAMPOS_VAZIO_VIRA_NULO, se o
+     *    campo novo tiver o mesmo contrato de "string vazia vira null" dos demais.
+     * 8. App\Model\Pessoa\UnimPessoaFisica::$fillable/$casts.
+     * 9. A lista de campos compartilhados em test/Cases/Request/Pessoa/CreatePessoaRequestTest.
+     *
+     * Depois de tudo isso, rodar gen:swagger (ver regra 1 do CLAUDE.md) para publicar em
+     * storage/swagger/http.json.
      *
      * PII (sensivel: true) sai do default de GET /pessoas/{id} e só vem se pedida por nome
      * ou por curinga. Resposta de escrita traz sempre — ver PessoaResource.

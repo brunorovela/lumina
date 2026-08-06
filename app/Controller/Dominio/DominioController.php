@@ -177,7 +177,11 @@ class DominioController extends AbstractController
         name: 'q',
         in: 'query',
         required: false,
-        description: 'Filtra ds_cidade por trecho do nome (LIKE %q%), sem distinção de acento ou caixa (collation do banco). Omitido, devolve todas as cidades do estado.',
+        description: 'Filtra ds_cidade por trecho do nome (LIKE %q%), sem distinção de acento ou caixa (collation do banco). '
+            . 'Omitido, devolve todas as cidades do estado — mas enviado PRESENTE e vazio (?q=) dá 422, não é tratado '
+            . 'como omitido (regra sometimes|string|min:1|max:255: min:1 reprova string vazia). '
+            . 'q vira fragmento cru de LIKE sem escapar caracteres especiais: `%` e `_` no valor agem como curinga SQL '
+            . '(ex.: q=100% casa qualquer nome, não o caractere "%" literal).',
         schema: new OA\Schema(type: 'string', example: 'camp')
     )]
     #[OA\Response(
@@ -193,7 +197,7 @@ class DominioController extends AbstractController
     )]
     #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
-    #[OA\Response(response: 422, description: 'cd_estado ausente ou inválido', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
+    #[OA\Response(response: 422, description: 'cd_estado ausente ou inválido, ou q enviado presente e vazio (min:1)', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function cidades(ListCidadeRequest $request): ResponseInterface
     {
         $validado = Tipo::mapa($request->validated());
