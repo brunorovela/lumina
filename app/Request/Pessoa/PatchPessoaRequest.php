@@ -12,18 +12,17 @@ declare(strict_types=1);
 
 namespace App\Request\Pessoa;
 
-use App\Request\Pessoa\Concerns\NormalizaCamposDePessoa;
-use App\Request\Pessoa\Concerns\ValidaDatasDePessoa;
-use App\Request\Pessoa\Concerns\ValidaDocumentosDePessoa;
-use App\Support\Tipo;
+use App\Request\Concerns\RejeitaCamposDesconhecidos;
 use Hyperf\Contract\ValidatorInterface;
 use Hyperf\Validation\Request\FormRequest;
 
+/**
+ * PATCH /pessoas/{id} escreve unim_pessoa e só — ver CreatePessoaRequest. Campo de pessoa
+ * física/jurídica no payload responde 422, e não é mais gravado em silêncio.
+ */
 class PatchPessoaRequest extends FormRequest
 {
-    use NormalizaCamposDePessoa;
-    use ValidaDatasDePessoa;
-    use ValidaDocumentosDePessoa;
+    use RejeitaCamposDesconhecidos;
 
     public function authorize(): bool
     {
@@ -39,20 +38,7 @@ class PatchPessoaRequest extends FormRequest
             'ds_nome' => 'sometimes|string|max:255',
             'ds_login' => 'sometimes|string|max:100',
             'ds_senha' => 'sometimes|string|min:6',
-            'ds_nome_oficial' => 'sometimes|string|max:255',
-            'ds_cpf' => 'sometimes|nullable|regex:/^\d{11}$/',
-            'ds_cnpj' => 'sometimes|regex:/^\d{14}$/',
-            'ds_nome_fantasia' => 'sometimes|string|max:255',
-            'ds_nome_social' => 'sometimes|nullable|string|max:255',
-            'ds_nome_mae' => 'sometimes|nullable|string|max:255',
-            'ds_nome_pai' => 'sometimes|nullable|string|max:255',
-            'ds_identidade' => 'sometimes|nullable|string|max:255',
-            'ds_orgao_estado' => 'sometimes|nullable|string|max:255',
-            'ds_identidade_orgao_exp' => 'sometimes|nullable|string|max:255',
-            'dt_identidade_expedicao' => 'sometimes|nullable|date_format:Y-m-d|before_or_equal:today',
-            'dt_nascimento' => 'sometimes|nullable|date_format:Y-m-d|before_or_equal:today',
-            'ds_sexo' => 'sometimes|nullable|in:f,m',
-            'cd_estado_civil' => 'sometimes|nullable|integer|exists:saas_estado_civil,cd_estado_civil',
+            'sn_pessoa_juridica' => 'sometimes|boolean',
         ];
     }
 
@@ -64,32 +50,6 @@ class PatchPessoaRequest extends FormRequest
             }
         });
 
-        $this->validarDocumentos($validator);
-        $this->validarDatas($validator);
-    }
-
-    /**
-     * `regex` (Critical 1 da revisão final) não tem mensagem própria como `digits` tinha —
-     * cairia no genérico "The :attribute format is invalid.". Mensagem explícita preserva a
-     * frase que o cliente da API já lia antes da troca de regra.
-     *
-     * @return array<string, string>
-     */
-    public function messages(): array
-    {
-        return [
-            'ds_cpf.regex' => 'The ds cpf must be 11 digits.',
-            'ds_cnpj.regex' => 'The ds cnpj must be 14 digits.',
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    protected function validationData(): array
-    {
-        // parent::validationData() declara array (não array<string, mixed>): sem a
-        // normalização de Tipo::mapa(), o PHPStan nível 10 recusa o argumento.
-        return $this->normalizarCamposDePessoa(Tipo::mapa(parent::validationData()));
+        $this->rejeitarCamposDesconhecidos($validator);
     }
 }

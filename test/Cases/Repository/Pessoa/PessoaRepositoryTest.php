@@ -27,79 +27,62 @@ class PessoaRepositoryTest extends TestCase
 {
     protected function tearDown(): void
     {
-        // unim_pessoa_fisica/unim_pessoa_juridica têm FK real (ON DELETE RESTRICT) para
-        // unim_pessoa, então os filhos precisam ser apagados antes do núcleo.
-        $cdPessoas = Db::table('unim_pessoa')->where('ds_login', 'like', 'teste.repo.%')->pluck('cd_pessoa');
-
-        Db::table('unim_pessoa_fisica')->whereIn('cd_pessoa', $cdPessoas)->delete();
-        Db::table('unim_pessoa_juridica')->whereIn('cd_pessoa', $cdPessoas)->delete();
+        // Este repositório não cria mais filho em unim_pessoa_fisica/unim_pessoa_juridica;
+        // o teste que simula dado de outro recurso limpa a linha que insere.
         Db::table('unim_pessoa')->where('ds_login', 'like', 'teste.repo.%')->delete();
 
         parent::tearDown();
     }
 
-    public function testCriarPessoaFisicaSalvaNucleoEFisicaNaMesmaTransacao()
+    public function testCriarSalvaSomenteAPessoa()
     {
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
-        $pessoa = $repository->criar(
-            [
-                'cd_cliente' => TenantDeTeste::cdCliente(),
-                'ds_nome' => 'Fulano de Teste',
-                'ds_login' => 'teste.repo.fisica',
-                'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
-                'sn_pessoa_juridica' => false,
-            ],
-            ['ds_nome_oficial' => 'Fulano de Teste Oficial'],
-            null
-        );
+        $pessoa = $repository->criar([
+            'cd_cliente' => TenantDeTeste::cdCliente(),
+            'ds_nome' => 'Fulano de Teste',
+            'ds_login' => 'teste.repo.pessoa',
+            'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
+            'sn_pessoa_juridica' => false,
+        ]);
 
         $this->assertNotNull($pessoa->cd_pessoa);
-        $this->assertSame('Fulano de Teste Oficial', $pessoa->fisica->ds_nome_oficial);
+        $this->assertSame('Fulano de Teste', $pessoa->ds_nome);
+        $this->assertSame(0, Db::table('unim_pessoa_fisica')->where('cd_pessoa', $pessoa->cd_pessoa)->count());
     }
 
     public function testLoginExisteDetectaDuplicataPorCliente()
     {
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
-        $repository->criar(
-            [
-                'cd_cliente' => TenantDeTeste::cdCliente(),
-                'ds_nome' => 'Ciclano de Teste',
-                'ds_login' => 'teste.repo.duplicado',
-                'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
-                'sn_pessoa_juridica' => false,
-            ],
-            ['ds_nome_oficial' => 'Ciclano'],
-            null
-        );
+        $repository->criar([
+            'cd_cliente' => TenantDeTeste::cdCliente(),
+            'ds_nome' => 'Ciclano de Teste',
+            'ds_login' => 'teste.repo.duplicado',
+            'ds_senha' => password_hash('123456', PASSWORD_BCRYPT),
+            'sn_pessoa_juridica' => false,
+        ]);
 
         $this->assertTrue($repository->loginExiste(TenantDeTeste::cdCliente(), 'teste.repo.duplicado'));
-        $this->assertFalse($repository->loginExiste(2, 'teste.repo.duplicado'));
+        $this->assertFalse($repository->loginExiste(TenantDeTeste::cdClienteInexistente(), 'teste.repo.duplicado'));
     }
 
     public function testAtualizarMantemSenhaAtualQuandoNaoInformada()
     {
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
-        $pessoa = $repository->criar(
-            [
-                'cd_cliente' => TenantDeTeste::cdCliente(),
-                'ds_nome' => 'Atualiza Teste',
-                'ds_login' => 'teste.repo.atualiza',
-                'ds_senha' => 'hash-original',
-                'sn_pessoa_juridica' => false,
-            ],
-            ['ds_nome_oficial' => 'Atualiza Teste Oficial'],
-            null
-        );
+        $pessoa = $repository->criar([
+            'cd_cliente' => TenantDeTeste::cdCliente(),
+            'ds_nome' => 'Atualiza Teste',
+            'ds_login' => 'teste.repo.atualiza',
+            'ds_senha' => 'hash-original',
+            'sn_pessoa_juridica' => false,
+        ]);
 
         $atualizada = $repository->atualizar(
             $pessoa->cd_pessoa,
             TenantDeTeste::cdCliente(),
-            ['ds_nome' => 'Atualiza Teste Renomeado'],
-            null,
-            null
+            ['ds_nome' => 'Atualiza Teste Renomeado']
         );
 
         $this->assertSame('Atualiza Teste Renomeado', $atualizada->ds_nome);
@@ -112,49 +95,72 @@ class PessoaRepositoryTest extends TestCase
 
         $this->expectException(PessoaNaoEncontradaException::class);
 
-        $repository->atualizar(999999, 1, ['ds_nome' => 'Nao Existe'], null, null);
+        $repository->atualizar(999999, TenantDeTeste::cdCliente(), ['ds_nome' => 'Nao Existe']);
     }
 
-    public function testAtualizarComEhIsentoDeFisicaJuridicaNuncaApagaFilhoOrfao()
+    /**
+     * Cross-tenant: o UPDATE tem cd_cliente no WHERE. Sem isso, um id de outro tenant seria
+     * atualizável — e a linha existe de verdade, então o teste falha (200 onde deveria ser
+     * 404) se o WHERE cair.
+     */
+    public function testAtualizarPessoaDeOutroClienteLancaExcecaoENaoAlteraALinha()
     {
-        // Regressão (re-review pós-fix do Critical 1): o delete de filho órfão rodava
-        // sempre que $dadosFisica/$dadosJuridica vinham null junto de sn_pessoa_juridica,
-        // mas pessoas isentas (login admin/administrador) SEMPRE mandam os dois null --
-        // não porque o tipo mudou, mas porque a regra de negócio nunca aplica
-        // física/jurídica a elas. Sem o guard $ehIsentoDeFisicaJuridica, um PUT válido
-        // numa pessoa isenta com fisica/juridica órfã de dado legado apagava essa linha
-        // (reproduzido de verdade contra cd_pessoa=1/2, cd_cliente=23, fora deste teste).
-        // Aqui simulamos o mesmo cenário com dado de teste: uma pessoa "isenta" (no
-        // sentido do parâmetro, independente do login) com uma linha órfã em
-        // unim_pessoa_juridica inserida direto no banco (só existiria por dado legado --
-        // o fluxo normal da aplicação nunca cria filho pra pessoa isenta).
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
-        $pessoa = $repository->criar(
-            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Isento Teste', 'ds_login' => 'teste.repo.isento', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
-            null,
-            null
-        );
+        $pessoa = $repository->criar([
+            'cd_cliente' => TenantDeTeste::cdCliente(),
+            'ds_nome' => 'Cross Tenant Update',
+            'ds_login' => 'teste.repo.crosstenant',
+            'ds_senha' => 'x',
+            'sn_pessoa_juridica' => false,
+        ]);
+
+        try {
+            $repository->atualizar($pessoa->cd_pessoa, TenantDeTeste::cdClienteInexistente(), ['ds_nome' => 'Invadido']);
+            $this->fail('Atualizar pessoa de outro cliente deveria lancar PessoaNaoEncontradaException.');
+        } catch (PessoaNaoEncontradaException) {
+            $linha = Db::table('unim_pessoa')->where('cd_pessoa', $pessoa->cd_pessoa)->first();
+            $this->assertSame('Cross Tenant Update', $linha->ds_nome);
+        }
+    }
+
+    /**
+     * Nenhuma escrita de pessoa apaga linha das tabelas de outro recurso — nem quando
+     * sn_pessoa_juridica é invertido, que era exatamente o caso em que a versão anterior
+     * apagava a linha antiga (e com ela o CPF).
+     */
+    public function testAtualizarNaoApagaLinhaDeOutroRecurso()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $pessoa = $repository->criar([
+            'cd_cliente' => TenantDeTeste::cdCliente(),
+            'ds_nome' => 'Com Juridica De Outro Recurso',
+            'ds_login' => 'teste.repo.outrorecurso',
+            'ds_senha' => 'x',
+            'sn_pessoa_juridica' => true,
+        ]);
 
         Db::table('unim_pessoa_juridica')->insert([
             'cd_pessoa' => $pessoa->cd_pessoa,
             'ds_cnpj' => '00000000000191',
-            'ds_nome_fantasia' => 'Fantasia Orfa De Dado Legado',
+            'ds_nome_fantasia' => 'Fantasia De Outro Recurso',
         ]);
 
-        $atualizada = $repository->atualizar(
-            $pessoa->cd_pessoa,
-            TenantDeTeste::cdCliente(),
-            ['ds_nome' => 'Isento Teste Renomeado', 'sn_pessoa_juridica' => false],
-            null,
-            null,
-            ehIsentoDeFisicaJuridica: true
-        );
+        try {
+            $repository->atualizar(
+                $pessoa->cd_pessoa,
+                TenantDeTeste::cdCliente(),
+                ['ds_nome' => 'Renomeada', 'sn_pessoa_juridica' => false]
+            );
 
-        $this->assertSame('Isento Teste Renomeado', $atualizada->ds_nome);
-
-        $linhaJuridica = Db::table('unim_pessoa_juridica')->where('cd_pessoa', $pessoa->cd_pessoa)->first();
-        $this->assertNotNull($linhaJuridica, 'PUT valido numa pessoa isenta NAO pode apagar juridica orfa de dado legado.');
+            $this->assertNotNull(
+                Db::table('unim_pessoa_juridica')->where('cd_pessoa', $pessoa->cd_pessoa)->first(),
+                'Escrita de pessoa NAO pode apagar linha de unim_pessoa_juridica.'
+            );
+        } finally {
+            Db::table('unim_pessoa_juridica')->where('cd_pessoa', $pessoa->cd_pessoa)->delete();
+        }
     }
 
     public function testListarFiltraPorNomeETipoPessoaEPaginaCertoDentroDoCliente()
@@ -162,14 +168,10 @@ class PessoaRepositoryTest extends TestCase
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
         $repository->criar(
-            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Maria Fisica Teste', 'ds_login' => 'teste.repo.listar1', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
-            ['ds_nome_oficial' => 'Maria Fisica Teste'],
-            null
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Maria Fisica Teste', 'ds_login' => 'teste.repo.listar1', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false]
         );
         $repository->criar(
-            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Empresa Juridica Teste', 'ds_login' => 'teste.repo.listar2', 'ds_senha' => 'x', 'sn_pessoa_juridica' => true],
-            null,
-            ['ds_cnpj' => '00000000000191', 'ds_nome_fantasia' => 'Empresa Juridica Teste']
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Empresa Juridica Teste', 'ds_login' => 'teste.repo.listar2', 'ds_senha' => 'x', 'sn_pessoa_juridica' => true]
         );
 
         $resultado = $repository->listar(TenantDeTeste::cdCliente(), ['nome' => 'Teste', 'tipo_pessoa' => 'fisica'], 1, 20);
@@ -187,9 +189,7 @@ class PessoaRepositoryTest extends TestCase
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
         $pessoa = $repository->criar(
-            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Login Reciclado Teste', 'ds_login' => 'teste.repo.loginreciclado', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
-            ['ds_nome_oficial' => 'Login Reciclado Teste'],
-            null
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Login Reciclado Teste', 'ds_login' => 'teste.repo.loginreciclado', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false]
         );
 
         $repository->excluir($pessoa->cd_pessoa, TenantDeTeste::cdCliente());
@@ -202,9 +202,7 @@ class PessoaRepositoryTest extends TestCase
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
         $pessoa = $repository->criar(
-            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Exclui Teste', 'ds_login' => 'teste.repo.excluir', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
-            ['ds_nome_oficial' => 'Exclui Teste'],
-            null
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Exclui Teste', 'ds_login' => 'teste.repo.excluir', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false]
         );
 
         $this->assertTrue($repository->excluir($pessoa->cd_pessoa, TenantDeTeste::cdCliente()));
@@ -215,106 +213,84 @@ class PessoaRepositoryTest extends TestCase
         $this->assertNotNull($linhaCrua->dt_excluido);
     }
 
-    public function testListarSemSelecaoMantemOContratoCompleto()
+    /**
+     * buscarPorId() não recorta por fields de propósito: o detalhe é cacheado por entidade
+     * (uma chave por pessoa) e o recorte roda na serialização. Se este teste passar a ver
+     * menos colunas, o cache passa a devolver registro incompleto para quem pediu outro
+     * fields.
+     */
+    public function testBuscarPorIdTrazTodasAsColunasDoMapaENuncaASenha()
     {
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
-        $repository->criar(
-            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Selecao Padrao', 'ds_login' => 'teste.repo.selpadrao', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
-            ['ds_nome_oficial' => 'Selecao Padrao Oficial', 'ds_cpf' => '111'],
-            null
+        $pessoa = $repository->criar(
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Selecao Item', 'ds_login' => 'teste.repo.selitem', 'ds_senha' => 'hash-secreto', 'sn_pessoa_juridica' => false]
         );
 
-        $resultado = $repository->listar(TenantDeTeste::cdCliente(), [], 1, 20);
-        $pessoa = $resultado['itens']->first();
+        $encontrada = $repository->buscarPorId($pessoa->cd_pessoa, TenantDeTeste::cdCliente());
 
-        $this->assertNotNull($pessoa);
-        $this->assertTrue($pessoa->relationLoaded('fisica'));
-        $this->assertNotNull($pessoa->fisica, 'fisica veio null no caminho default: chave estrangeira ausente no eager load.');
+        $this->assertNotNull($encontrada);
+        $this->assertEqualsCanonicalizing(MapaDeCamposPessoa::colunas(), array_keys($encontrada->getAttributes()));
+        $this->assertArrayNotHasKey('ds_senha', $encontrada->getAttributes());
+    }
+
+    public function testBuscarPorIdDeOutroClienteDevolveNulo()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $pessoa = $repository->criar(
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Item De Outro Cliente', 'ds_login' => 'teste.repo.itemoutro', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false]
+        );
+
+        $this->assertNull($repository->buscarPorId($pessoa->cd_pessoa, TenantDeTeste::cdClienteInexistente()));
     }
 
     /**
-     * O ganho de banco: sem relação pedida, o eager load não roda. relationLoaded() === false
-     * prova isso de forma determinística, sem depender de contar queries (o pool de conexões
-     * por corrotina torna query log intermitente).
+     * O SELECT parcial da listagem continua real: sem fields, só o conjunto enxuto do mapa
+     * chega ao model. Um select() completo aqui passaria despercebido em qualquer teste de
+     * resposta HTTP, porque o Resource recorta a saída de qualquer forma.
      */
-    public function testListarSemRelacaoPedidaNaoCarregaRelacaoNemColunaExtra()
+    public function testListarComFieldsFazSelectParcialDeVerdade()
     {
         $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
 
         $repository->criar(
-            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Selecao Enxuta', 'ds_login' => 'teste.repo.selenxuta', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
-            ['ds_nome_oficial' => 'Selecao Enxuta Oficial', 'ds_cpf' => '222'],
-            null
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Selecao Enxuta', 'ds_login' => 'teste.repo.selenxuta', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false]
         );
 
         $resultado = $repository->listar(
             TenantDeTeste::cdCliente(),
-            [],
+            ['nome' => 'Selecao Enxuta'],
             1,
             20,
             MapaDeCamposPessoa::selecao('ds_nome')
         );
+
+        $pessoa = $resultado['itens']->first();
+
+        $this->assertNotNull($pessoa);
+        $this->assertSame(['ds_nome'], array_keys($pessoa->getAttributes()));
+    }
+
+    /**
+     * A listagem não carrega relação nenhuma: elas saíram do mapa junto com as tabelas de
+     * outro recurso. relationLoaded() === false prova que nem o eager load nem um lazy load
+     * acidental acontecem.
+     */
+    public function testListarNaoCarregaRelacaoNenhuma()
+    {
+        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
+
+        $repository->criar(
+            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Sem Relacao', 'ds_login' => 'teste.repo.semrelacao', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false]
+        );
+
+        $resultado = $repository->listar(TenantDeTeste::cdCliente(), ['nome' => 'Sem Relacao'], 1, 20, MapaDeCamposPessoa::selecao('*'));
 
         $pessoa = $resultado['itens']->first();
 
         $this->assertNotNull($pessoa);
         $this->assertFalse($pessoa->relationLoaded('fisica'));
         $this->assertFalse($pessoa->relationLoaded('juridica'));
-        $this->assertSame(['ds_nome'], array_keys($pessoa->getAttributes()));
-    }
-
-    /**
-     * A armadilha do eager load parcial: sem a FK no select do filho, o Eloquent não casa
-     * pai e filho e devolve null SEM erro. Se este teste falhar com fisica null, a FK
-     * sumiu de SelecaoDeCampos::relacoes().
-     */
-    public function testEagerLoadParcialTrazAFkEPortantoCasaPaiEFilho()
-    {
-        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
-
-        $repository->criar(
-            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Selecao Com Fk', 'ds_login' => 'teste.repo.selfk', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
-            ['ds_nome_oficial' => 'Selecao Com Fk Oficial', 'ds_cpf' => '333'],
-            null
-        );
-
-        $resultado = $repository->listar(
-            TenantDeTeste::cdCliente(),
-            [],
-            1,
-            20,
-            MapaDeCamposPessoa::selecao('ds_nome,fisica.ds_cpf,fisica.dt_nascimento')
-        );
-
-        $pessoa = $resultado['itens']->first();
-
-        $this->assertNotNull($pessoa);
-        $this->assertTrue($pessoa->relationLoaded('fisica'));
-        $this->assertNotNull($pessoa->fisica, 'fisica veio null: a chave estrangeira caiu do select do eager load.');
-        $this->assertSame('333', $pessoa->fisica->ds_cpf);
-        // cd_pessoa entra no select do pai porque há relação pedida
-        $this->assertEqualsCanonicalizing(['cd_pessoa', 'ds_nome'], array_keys($pessoa->getAttributes()));
-    }
-
-    public function testBuscarPorIdRespeitaASelecao()
-    {
-        $repository = $this->getContainer()->get(PessoaRepositoryInterface::class);
-
-        $pessoa = $repository->criar(
-            ['cd_cliente' => TenantDeTeste::cdCliente(), 'ds_nome' => 'Selecao Item', 'ds_login' => 'teste.repo.selitem', 'ds_senha' => 'x', 'sn_pessoa_juridica' => false],
-            ['ds_nome_oficial' => 'Selecao Item Oficial', 'ds_cpf' => '444'],
-            null
-        );
-
-        $encontrada = $repository->buscarPorId(
-            $pessoa->cd_pessoa,
-            TenantDeTeste::cdCliente(),
-            MapaDeCamposPessoa::selecao('ds_nome')
-        );
-
-        $this->assertNotNull($encontrada);
-        $this->assertSame(['ds_nome'], array_keys($encontrada->getAttributes()));
-        $this->assertFalse($encontrada->relationLoaded('fisica'));
     }
 }

@@ -20,46 +20,30 @@ use App\Support\Campos\SelecaoDeCampos;
 use App\Support\Tipo;
 use Hyperf\Database\Model\Collection;
 
+/**
+ * Regras de pessoa — unim_pessoa e nada além. Pessoa física e jurídica são recursos
+ * próprios: esta classe não separa mais o payload em três tabelas, não conhece a isenção de
+ * física/jurídica dos logins admin/administrador (regra que só existia para decidir o que
+ * gravar nas tabelas filhas) e não apaga linha de outro recurso quando o tipo muda.
+ */
 class PessoaService
 {
-    private const LOGINS_ISENTOS_DE_FISICA_JURIDICA = ['admin', 'administrador'];
-
     /**
-     * Colunas de unim_pessoa_fisica que a API escreve. FONTE ÚNICA: separarDados() (POST/PUT)
-     * e atualizarParcial() (PATCH) leem daqui.
+     * Colunas de unim_pessoa que a API escreve, fora cd_cliente (que vem da identidade
+     * autenticada, nunca do payload) e ds_senha (tratada à parte porque passa por hash).
      *
-     * Antes eram duas listas literais separadas, e é assim que ds_cnpj acabou gravado em
-     * pessoa física (Finding 14). Com doze colunas em jogo (as onze de CAMPOS_FISICA mais
-     * ds_nome_oficial), manter duas listas em sincronia na mão não é uma aposta razoável.
-     *
-     * ds_nome_oficial fica FORA: é obrigatório para pessoa física e tratado à parte em
-     * separarDados(), com regra própria.
+     * FONTE ÚNICA de POST/PUT (criar/atualizar) e PATCH (atualizarParcial). Coluna que
+     * valida no request mas não entra aqui responde 200/201 e nunca grava — falha
+     * silenciosa, o pior modo de falha.
      *
      * @var string[]
      */
-    private const CAMPOS_FISICA = [
-        'ds_nome_social',
-        'ds_nome_mae',
-        'ds_nome_pai',
-        'ds_cpf',
-        'ds_identidade',
-        'ds_orgao_estado',
-        'ds_identidade_orgao_exp',
-        'dt_identidade_expedicao',
-        'dt_nascimento',
-        'ds_sexo',
-        'cd_estado_civil',
-    ];
+    private const CAMPOS_PESSOA = ['ds_nome', 'ds_login', 'sn_pessoa_juridica'];
 
-    /**
-     * Colunas de unim_pessoa_juridica que a API escreve. Mesma razão de CAMPOS_FISICA.
-     *
-     * @var string[]
-     */
-    private const CAMPOS_JURIDICA = ['ds_cnpj', 'ds_nome_fantasia'];
-
-    public function __construct(private PessoaRepositoryInterface $pessoaRepository)
-    {
+    public function __construct(
+        private PessoaRepositoryInterface $pessoaRepository,
+        private CachePessoa $cachePessoa
+    ) {
     }
 
     /**
@@ -71,9 +55,7 @@ class PessoaService
             throw new LoginJaExisteException();
         }
 
-        [$dadosPessoa, $dadosFisica, $dadosJuridica] = $this->separarDados($cdCliente, $dados);
-
-        return $this->pessoaRepository->criar($dadosPessoa, $dadosFisica, $dadosJuridica);
+        return $this->pessoaRepository->criar($this->dadosDePessoa($cdCliente, $dados));
     }
 
     /**
@@ -81,29 +63,15 @@ class PessoaService
      */
     public function atualizar(int $cdPessoa, int $cdCliente, array $dados): UnimPessoa
     {
-        $dsLogin = Tipo::texto($dados['ds_login'] ?? null);
+        $this->garantirLoginDisponivel($cdPessoa, $cdCliente, Tipo::texto($dados['ds_login'] ?? null));
 
-        $this->garantirLoginDisponivel($cdPessoa, $cdCliente, $dsLogin);
+        $pessoa = $this->pessoaRepository->atualizar($cdPessoa, $cdCliente, $this->dadosDePessoa($cdCliente, $dados));
 
-        [$dadosPessoa, $dadosFisica, $dadosJuridica] = $this->separarDados($cdCliente, $dados);
+        // Depois da escrita, não antes: se a gravação falhar (404, login duplicado, erro de
+        // banco), o cache continua válido porque nada mudou.
+        $this->cachePessoa->esquecer($cdCliente, $cdPessoa);
 
-        // O Repository precisa saber se esta pessoa é isenta de física/jurídica (login
-        // admin/administrador) pra NUNCA apagar fisica/juridica dela — mesmo que
-        // $dadosFisica/$dadosJuridica venham null aqui (o que pra pessoa isenta não
-        // significa "tipo mudou", significa "essa regra nunca se aplicou"). Regressão
-        // real encontrada em re-review: sem esse sinal, um PUT válido numa pessoa isenta
-        // que tivesse fisica/juridica órfã por dado legado (cd_pessoa=1/2, cd_cliente=23,
-        // confirmado contra o banco real) apagava essa linha.
-        $ehIsentoDeFisicaJuridica = $this->ehIsentoDeFisicaJuridica($dsLogin);
-
-        return $this->pessoaRepository->atualizar(
-            $cdPessoa,
-            $cdCliente,
-            $dadosPessoa,
-            $dadosFisica,
-            $dadosJuridica,
-            $ehIsentoDeFisicaJuridica
-        );
+        return $pessoa;
     }
 
     /**
@@ -115,49 +83,44 @@ class PessoaService
             $this->garantirLoginDisponivel($cdPessoa, $cdCliente, Tipo::texto($dados['ds_login']));
         }
 
-        // PATCH não muda o tipo pessoa (física/jurídica) — precisa saber o tipo REAL já
-        // existente antes de montar os dados parciais. Sem isso, um PATCH com ds_cnpj
-        // numa pessoa física criava uma linha jurídica pra ela (Finding 14, whole-branch
-        // review; mesmo problema de integridade do Critical 1, por outra porta). buscar()
-        // também garante 404 cedo se a pessoa não existir/não for deste cliente.
-        $pessoaAtual = $this->buscar($cdPessoa, $cdCliente);
+        // PATCH não precisa mais ler a pessoa antes de gravar: aquela leitura existia só
+        // para descobrir o tipo (física/jurídica) e decidir em qual tabela filha escrever.
+        // O 404 continua garantido — quem o levanta é o Repository, dentro do WHERE com
+        // cd_cliente.
+        $dadosPessoa = self::somenteCamposConhecidos($dados, self::CAMPOS_PESSOA);
 
-        $dadosPessoa = array_intersect_key($dados, array_flip(['ds_nome', 'ds_login', 'ds_senha']));
-
-        if (isset($dadosPessoa['ds_senha'])) {
-            $dadosPessoa['ds_senha'] = password_hash(Tipo::texto($dadosPessoa['ds_senha']), PASSWORD_BCRYPT);
+        if (isset($dados['ds_senha'])) {
+            $dadosPessoa['ds_senha'] = password_hash(Tipo::texto($dados['ds_senha']), PASSWORD_BCRYPT);
         }
 
-        // Campos do tipo que a pessoa NÃO é são ignorados silenciosamente, mesmo que venham
-        // no payload. Com doze colunas de física em jogo, a lista vem da constante — duas
-        // listas literais foi como ds_cnpj entrou em pessoa física (Finding 14).
-        $dadosFisica = $pessoaAtual->sn_pessoa_juridica
-            ? []
-            : self::somenteCamposConhecidos($dados, [...self::CAMPOS_FISICA, 'ds_nome_oficial']);
+        $pessoa = $this->pessoaRepository->atualizar($cdPessoa, $cdCliente, $dadosPessoa);
 
-        $dadosJuridica = $pessoaAtual->sn_pessoa_juridica
-            ? self::somenteCamposConhecidos($dados, self::CAMPOS_JURIDICA)
-            : [];
+        $this->cachePessoa->esquecer($cdCliente, $cdPessoa);
 
-        return $this->pessoaRepository->atualizar(
-            $cdPessoa,
-            $cdCliente,
-            $dadosPessoa,
-            $dadosFisica ?: null,
-            $dadosJuridica ?: null
-        );
+        return $pessoa;
     }
 
     /**
-     * @param null|SelecaoDeCampos $selecao null significa contrato completo
+     * Leitura de detalhe: cache primeiro, banco só no miss. O cache guarda a ENTIDADE (todas
+     * as colunas do mapa), então o recorte de ?fields= é aplicado depois pelo
+     * PessoaResource, no Controller — não existe uma chave de cache por combinação de fields.
      */
-    public function buscar(int $cdPessoa, int $cdCliente, ?SelecaoDeCampos $selecao = null): UnimPessoa
+    public function buscar(int $cdPessoa, int $cdCliente): UnimPessoa
     {
-        $pessoa = $this->pessoaRepository->buscarPorId($cdPessoa, $cdCliente, $selecao);
+        $cacheada = $this->cachePessoa->buscar($cdCliente, $cdPessoa);
+
+        if ($cacheada !== null) {
+            return $cacheada;
+        }
+
+        $pessoa = $this->pessoaRepository->buscarPorId($cdPessoa, $cdCliente);
 
         if ($pessoa === null) {
+            // 404 não é cacheado de propósito — ver CachePessoa.
             throw new PessoaNaoEncontradaException();
         }
+
+        $this->cachePessoa->guardar($cdCliente, $cdPessoa, $pessoa);
 
         return $pessoa;
     }
@@ -178,6 +141,8 @@ class PessoaService
         // request pro meta, mas a paginação de fato rodava com o clampado).
         $perPage = min($perPage, 100);
 
+        // A LISTAGEM NÃO É CACHEADA: a resposta depende de filtro, página e fields, e
+        // invalidar isso a cada escrita é outro problema. Só o detalhe tem cache.
         $resultado = $this->pessoaRepository->listar($cdCliente, $filtros, $page, $perPage, $selecao);
 
         return [...$resultado, 'per_page' => $perPage];
@@ -188,6 +153,10 @@ class PessoaService
         if (! $this->pessoaRepository->excluir($cdPessoa, $cdCliente)) {
             throw new PessoaNaoEncontradaException();
         }
+
+        // Sem isto, a pessoa excluída continuaria respondendo 200 no detalhe por até uma
+        // hora — o soft delete some do banco na hora, o cache não.
+        $this->cachePessoa->esquecer($cdCliente, $cdPessoa);
     }
 
     private function garantirLoginDisponivel(int $cdPessoa, int $cdCliente, string $dsLogin): void
@@ -197,48 +166,23 @@ class PessoaService
         }
     }
 
-    private function ehIsentoDeFisicaJuridica(string $dsLogin): bool
-    {
-        return in_array(strtolower($dsLogin), self::LOGINS_ISENTOS_DE_FISICA_JURIDICA, true);
-    }
-
     /**
+     * Payload de POST/PUT, onde ds_nome, ds_login e sn_pessoa_juridica são obrigatórios pelo
+     * FormRequest.
+     *
      * @param array<string, mixed> $dados
      *
-     * @return array{0: array<string, mixed>, 1: null|array<string, mixed>, 2: null|array<string, mixed>}
+     * @return array<string, mixed>
      */
-    private function separarDados(int $cdCliente, array $dados): array
+    private function dadosDePessoa(int $cdCliente, array $dados): array
     {
-        $dsLogin = Tipo::texto($dados['ds_login'] ?? null);
-
-        $dadosPessoa = [
-            'cd_cliente' => $cdCliente,
-            'ds_nome' => $dados['ds_nome'],
-            'ds_login' => $dsLogin,
-            'sn_pessoa_juridica' => $dados['sn_pessoa_juridica'],
-        ];
+        $dadosPessoa = ['cd_cliente' => $cdCliente, ...self::somenteCamposConhecidos($dados, self::CAMPOS_PESSOA)];
 
         if (isset($dados['ds_senha'])) {
             $dadosPessoa['ds_senha'] = password_hash(Tipo::texto($dados['ds_senha']), PASSWORD_BCRYPT);
         }
 
-        if ($this->ehIsentoDeFisicaJuridica($dsLogin)) {
-            return [$dadosPessoa, null, null];
-        }
-
-        if ($dados['sn_pessoa_juridica']) {
-            return [$dadosPessoa, null, self::somenteCamposConhecidos($dados, self::CAMPOS_JURIDICA)];
-        }
-
-        // ds_nome_oficial é obrigatório para pessoa física (required_if no FormRequest), por
-        // isso entra direto e não pela lista de opcionais.
-        $dadosFisica = ['ds_nome_oficial' => $dados['ds_nome_oficial']];
-
-        return [
-            $dadosPessoa,
-            [...$dadosFisica, ...self::somenteCamposConhecidos($dados, self::CAMPOS_FISICA)],
-            null,
-        ];
+        return $dadosPessoa;
     }
 
     /**

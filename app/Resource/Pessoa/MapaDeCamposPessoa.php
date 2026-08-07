@@ -22,37 +22,45 @@ use App\Support\Campos\SelecaoDeCampos;
  *
  * ds_senha NÃO está aqui, e é por isso que não existe blacklist a manter: o que não está
  * no mapa é inalcançável por construção.
+ *
+ * ESCOPO: só colunas de unim_pessoa. Pessoa física (unim_pessoa_fisica) e pessoa jurídica
+ * (unim_pessoa_juridica) NÃO são desta API — cada recurso responde pela própria tabela.
+ * Antes o mapa tinha quatorze campos `fisica.*`/`juridica.*` e a leitura os trazia por
+ * eager load; hoje /pessoas não lê nem escreve essas tabelas, e pedir `fields=fisica.ds_cpf`
+ * responde 422 (campo fora do mapa) em vez de devolver dado de outro recurso.
+ *
+ * Nenhum campo aqui é `sensivel: true` hoje: a PII de pessoa (CPF, RG, filiação,
+ * nascimento) mora em unim_pessoa_fisica, que saiu deste mapa. O mecanismo de sensível
+ * continua em Campo/SelecaoDeCampos, coberto por HyperfTest\Cases\Support\Campos, para
+ * quem for expor essas colunas na API própria delas.
  */
 final class MapaDeCamposPessoa
 {
     public const CHAVE_LOCAL = 'cd_pessoa';
 
     /**
-     * MANUTENÇÃO: campo novo de pessoa física é NOVE edições, não três — nada aqui deriva
-     * automaticamente do resto porque atributo PHP exige expressão constante (Swagger) e
-     * porque mapa, regras de validação e schema do banco são coisas fisicamente separadas.
-     * Esquecer CAMPOS_FISICA é o pior caso: falha muda (201 normal, campo simplesmente
-     * nunca grava).
+     * MANUTENÇÃO: coluna nova de unim_pessoa exposta na API é SEIS edições, não uma — nada
+     * aqui deriva automaticamente do resto porque atributo PHP exige expressão constante
+     * (Swagger) e porque mapa, regras de validação e schema do banco são coisas fisicamente
+     * separadas. Esquecer PessoaService::CAMPOS_PESSOA é o pior caso: falha muda (201
+     * normal, campo simplesmente nunca grava).
      *
      * 1. Este mapa (mapa()).
      * 2. App\Swagger\PessoaSchema (e PessoaResumidaSchema, se o campo entrar no default enxuto).
      * 3. A descrição do #[OA\Parameter(name: 'fields')] dos DOIS endpoints de leitura em
      *    App\Controller\Pessoa\PessoaController (listar e buscar).
      * 4. A lista de properties do requestBody nos TRÊS verbos de escrita em PessoaController
-     *    (criar/atualizar/atualizarParcial).
-     * 5. rules() nas TRÊS classes de request (Create/Update/PatchPessoaRequest).
-     * 6. App\Service\Pessoa\PessoaService::CAMPOS_FISICA — sem entrar aqui, o campo valida,
-     *    responde 201/200, e nunca é gravado (falha SILENCIOSA, não dá erro nenhum).
-     * 7. App\Request\Pessoa\Concerns\NormalizaCamposDePessoa::CAMPOS_VAZIO_VIRA_NULO, se o
-     *    campo novo tiver o mesmo contrato de "string vazia vira null" dos demais.
-     * 8. App\Model\Pessoa\UnimPessoaFisica::$fillable/$casts.
-     * 9. A lista de campos compartilhados em test/Cases/Request/Pessoa/CreatePessoaRequestTest.
+     *    (criar/atualizar/atualizarParcial), se o campo também for escrito.
+     * 5. rules() nas TRÊS classes de request (Create/Update/PatchPessoaRequest) — é dali que
+     *    sai a lista de campos aceitos, então campo fora de rules() responde 422.
+     * 6. App\Model\Pessoa\UnimPessoa::$fillable/$casts e App\Service\Pessoa\PessoaService::CAMPOS_PESSOA.
      *
      * Depois de tudo isso, rodar gen:swagger (ver regra 1 do CLAUDE.md) para publicar em
      * storage/swagger/http.json.
      *
-     * PII (sensivel: true) sai do default de GET /pessoas/{id} e só vem se pedida por nome
-     * ou por curinga. Resposta de escrita traz sempre — ver PessoaResource.
+     * Campo marcado `sensivel: true` sai do default de GET /pessoas/{id} e só vem se pedido
+     * por nome ou por curinga; resposta de escrita traz sempre (ver PessoaResource). Hoje
+     * nenhum campo de unim_pessoa é sensível.
      *
      * @return array<string, Campo>
      */
@@ -64,21 +72,20 @@ final class MapaDeCamposPessoa
             'ds_nome' => Campo::coluna('ds_nome', noPadrao: true),
             'ds_login' => Campo::coluna('ds_login', noPadrao: true),
             'sn_pessoa_juridica' => Campo::coluna('sn_pessoa_juridica', noPadrao: true),
-            'fisica.ds_nome_oficial' => Campo::relacao('fisica', 'ds_nome_oficial', self::CHAVE_LOCAL),
-            'fisica.ds_nome_social' => Campo::relacao('fisica', 'ds_nome_social', self::CHAVE_LOCAL),
-            'fisica.ds_nome_mae' => Campo::relacao('fisica', 'ds_nome_mae', self::CHAVE_LOCAL, sensivel: true),
-            'fisica.ds_nome_pai' => Campo::relacao('fisica', 'ds_nome_pai', self::CHAVE_LOCAL, sensivel: true),
-            'fisica.ds_cpf' => Campo::relacao('fisica', 'ds_cpf', self::CHAVE_LOCAL, sensivel: true),
-            'fisica.ds_identidade' => Campo::relacao('fisica', 'ds_identidade', self::CHAVE_LOCAL, sensivel: true),
-            'fisica.ds_orgao_estado' => Campo::relacao('fisica', 'ds_orgao_estado', self::CHAVE_LOCAL),
-            'fisica.ds_identidade_orgao_exp' => Campo::relacao('fisica', 'ds_identidade_orgao_exp', self::CHAVE_LOCAL),
-            'fisica.dt_identidade_expedicao' => Campo::relacao('fisica', 'dt_identidade_expedicao', self::CHAVE_LOCAL),
-            'fisica.dt_nascimento' => Campo::relacao('fisica', 'dt_nascimento', self::CHAVE_LOCAL, sensivel: true),
-            'fisica.ds_sexo' => Campo::relacao('fisica', 'ds_sexo', self::CHAVE_LOCAL),
-            'fisica.cd_estado_civil' => Campo::relacao('fisica', 'cd_estado_civil', self::CHAVE_LOCAL),
-            'juridica.ds_cnpj' => Campo::relacao('juridica', 'ds_cnpj', self::CHAVE_LOCAL),
-            'juridica.ds_nome_fantasia' => Campo::relacao('juridica', 'ds_nome_fantasia', self::CHAVE_LOCAL),
         ];
+    }
+
+    /**
+     * Todas as colunas expostas, em ordem de mapa. É o conjunto que o cache de
+     * GET /pessoas/{id} guarda: o cache é por ENTIDADE (uma chave por pessoa), e o recorte
+     * do ?fields= roda depois, sobre o dado cacheado — por isso a leitura de banco do
+     * detalhe traz sempre estas colunas, e não só as pedidas.
+     *
+     * @return string[]
+     */
+    public static function colunas(): array
+    {
+        return array_map(static fn (Campo $campo): string => $campo->coluna, array_values(self::mapa()));
     }
 
     public static function selecao(?string $fields, bool $padraoEhTudo = false): SelecaoDeCampos

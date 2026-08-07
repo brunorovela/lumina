@@ -28,6 +28,12 @@ use Hyperf\Di\Annotation\Inject;
 use Hyperf\Swagger\Annotation as OA;
 use Psr\Http\Message\ResponseInterface;
 
+/**
+ * ESCOPO DESTA API: a tabela unim_pessoa. Nada de unim_pessoa_fisica nem
+ * unim_pessoa_juridica — cada recurso responde pelos próprios dados. Campo de física ou
+ * jurídica no payload de escrita responde 422; em ?fields= responde 422 do mesmo jeito
+ * (campo fora do mapa).
+ */
 #[OA\HyperfServer(name: 'http')]
 class PessoaController extends AbstractController
 {
@@ -37,49 +43,29 @@ class PessoaController extends AbstractController
     #[OA\Post(path: '/pessoas', summary: 'Cria uma nova pessoa para o cliente autenticado', tags: ['Pessoa'])]
     #[OA\RequestBody(
         required: true,
-        description: 'Se sn_pessoa_juridica for true, os dez campos novos de física do payload são ignorados em silêncio '
-            . '(nada é gravado); se for false, ds_cnpj/ds_nome_fantasia são ignorados do mesmo jeito. '
-            . 'Login admin ou administrador (comparação exata, não prefixo) nunca tem física/jurídica GRAVADA por esta '
-            . 'API, mesmo que os campos venham no payload — mas pode aparecer com fisica/juridica preenchida na '
-            . 'resposta se já existir dado órfão de legado para essa conta; a API não cria nem apaga esse dado. '
-            . 'Nos dez campos novos de pessoa física (ds_nome_social, ds_nome_mae, ds_nome_pai, ds_identidade, '
-            . 'ds_orgao_estado, ds_identidade_orgao_exp, dt_identidade_expedicao, dt_nascimento, ds_sexo, cd_estado_civil), '
-            . 'string vazia enviada é tratada como ausência de valor e vira null. '
-            . 'ds_cpf e ds_cnpj aceitam máscara ou número JSON sem aspas (o número é validado por dígito verificador '
-            . 'igual à string); são gravados/devolvidos sempre sem máscara. ds_cpf entrou na mesma regra dos dez '
-            . 'campos novos: string vazia é tratada como ausência de valor e vira null (mesmo efeito de enviar null '
-            . 'explicitamente), mas um valor não vazio que não sobra em dígitos (ex.: "abc") é rejeitado com 422, não '
-            . 'descartado em silêncio. ds_cnpj é diferente: continua fora dessa lista, então string vazia nele '
-            . 'reprova a validação (required_if quando sn_pessoa_juridica=true), não vira null.',
+        description: 'Esta API grava APENAS a tabela de pessoa (unim_pessoa): nome, login, senha e o indicador de '
+            . 'física/jurídica. '
+            . 'MUDANÇA DE CONTRATO: os quatorze campos de pessoa física e jurídica que este endpoint aceitava '
+            . '(ds_nome_oficial, ds_cpf, ds_cnpj, ds_nome_fantasia, ds_nome_social, ds_nome_mae, ds_nome_pai, '
+            . 'ds_identidade, ds_orgao_estado, ds_identidade_orgao_exp, dt_identidade_expedicao, dt_nascimento, '
+            . 'ds_sexo, cd_estado_civil) NÃO são mais aceitos aqui. Enviar qualquer um deles — ou qualquer outro campo '
+            . 'fora da lista abaixo — responde 422 com o nome do campo em errors, em vez de ser descartado em silêncio. '
+            . 'Consequência prática: uma pessoa criada por aqui NÃO ganha linha em unim_pessoa_fisica; sn_pessoa_juridica '
+            . 'diz apenas o tipo declarado.',
         content: new OA\JsonContent(
             required: ['ds_nome', 'ds_login', 'ds_senha', 'sn_pessoa_juridica'],
             properties: [
-                new OA\Property(property: 'ds_nome', type: 'string', maxLength: 255),
-                new OA\Property(property: 'ds_login', type: 'string', maxLength: 100),
-                new OA\Property(property: 'ds_senha', type: 'string', minLength: 6),
-                new OA\Property(property: 'sn_pessoa_juridica', type: 'boolean'),
-                new OA\Property(property: 'ds_nome_oficial', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = false'),
-                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas — nos dois casos o valor é validado por dígito verificador. String vazia é tratada como ausência de valor e vira null (mesmo efeito de enviar null); valor não vazio que não sobra em dígitos (ex.: "abc") é rejeitado com 422.', example: '52998224725', nullable: true),
-                new OA\Property(property: 'ds_cnpj', type: 'string', description: 'Obrigatório quando sn_pessoa_juridica = true. CNPJ com 14 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '00000000000191'),
-                new OA\Property(property: 'ds_nome_fantasia', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = true'),
-                new OA\Property(property: 'ds_nome_social', type: 'string', maxLength: 255, nullable: true, example: 'Ana'),
-                new OA\Property(property: 'ds_nome_mae', type: 'string', maxLength: 255, nullable: true, example: 'Maria Souza'),
-                new OA\Property(property: 'ds_nome_pai', type: 'string', maxLength: 255, nullable: true, example: 'Jose Souza'),
-                new OA\Property(property: 'ds_identidade', type: 'string', maxLength: 255, nullable: true, example: '123456789'),
-                new OA\Property(property: 'ds_orgao_estado', type: 'string', maxLength: 255, nullable: true, description: 'UF do órgão expedidor da identidade.', example: 'SP'),
-                new OA\Property(property: 'ds_identidade_orgao_exp', type: 'string', maxLength: 255, nullable: true, description: 'Órgão expedidor da identidade.', example: 'SSP'),
-                new OA\Property(property: 'dt_identidade_expedicao', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura. Comparada com dt_nascimento só quando as duas vêm no MESMO payload — nesse caso não pode ser anterior a ela; enviada sozinha, não exige dt_nascimento.', example: '2015-03-01'),
-                new OA\Property(property: 'dt_nascimento', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura.', example: '1990-05-12'),
-                new OA\Property(property: 'ds_sexo', type: 'string', enum: ['f', 'm'], nullable: true, description: 'Só f, m ou null (espaços nas pontas são cortados; F/M maiúsculo também são aceitos e gravados em minúsculo).', example: 'f'),
-                new OA\Property(property: 'cd_estado_civil', type: 'integer', nullable: true, description: 'Código de saas_estado_civil; precisa existir na tabela. Rótulo em GET /estados-civis.', example: 37),
+                new OA\Property(property: 'ds_nome', type: 'string', maxLength: 255, example: 'Ana Souza'),
+                new OA\Property(property: 'ds_login', type: 'string', maxLength: 100, description: 'Único por cliente. Login repetido responde 409.', example: 'ana.souza'),
+                new OA\Property(property: 'ds_senha', type: 'string', minLength: 6, description: 'Gravada com hash bcrypt; nunca é devolvida em nenhuma resposta.'),
+                new OA\Property(property: 'sn_pessoa_juridica', type: 'boolean', description: 'false = pessoa física, true = pessoa jurídica. Só declara o tipo — não cria nem apaga registro de física/jurídica.', example: false),
             ]
         )
     )]
     #[OA\Response(
         response: 201,
-        description: 'Pessoa criada. A resposta ignora ?fields= e traz o registro completo, dado pessoal incluso — é o que o '
-            . 'servidor gravou. CPF e CNPJ voltam sem máscara e ds_sexo em minúsculo, mesmo que enviados de outra forma; '
-            . 'nos dez campos novos de pessoa física, string vazia enviada volta como null.',
+        description: 'Pessoa criada. A resposta ignora ?fields= e traz o registro completo de unim_pessoa — é o que o '
+            . 'servidor gravou. cd_cliente vem da identidade autenticada, nunca do payload.',
         content: new OA\JsonContent(
             properties: [
                 new OA\Property(property: 'success', type: 'boolean', example: true),
@@ -94,12 +80,16 @@ class PessoaController extends AbstractController
         response: 409,
         description: 'Já existe pessoa com esse login para este cliente. Mesma resposta (mesma mensagem) para uma '
             . 'violação de chave estrangeira em qualquer coluna FK do payload (SQLSTATE 23000, mapeado para 409 por '
-            . 'App\Exception\Handler\DatabaseExceptionHandler) — hoje só cd_estado_civil tem guarda própria (regra '
-            . 'exists, vira 422 antes de chegar ao banco); qualquer outra FK sem essa guarda cai aqui, indistinguível '
-            . 'de login duplicado.',
+            . 'App\Exception\Handler\DatabaseExceptionHandler).',
         content: new OA\JsonContent(ref: '#/components/schemas/Erro')
     )]
-    #[OA\Response(response: 422, description: 'Dados inválidos', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
+    #[OA\Response(
+        response: 422,
+        description: 'Dados inválidos, OU campo que não pertence a este recurso (qualquer campo de pessoa '
+            . 'física/jurídica, ou qualquer nome fora da lista do requestBody). A chave de errors é o nome do campo '
+            . 'recusado.',
+        content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao')
+    )]
     public function criar(CreatePessoaRequest $request): ResponseInterface
     {
         $pessoa = $this->pessoaService->criar(IdentidadeContext::cdCliente(), Tipo::mapa($request->validated()));
@@ -111,51 +101,27 @@ class PessoaController extends AbstractController
     #[OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))]
     #[OA\RequestBody(
         required: true,
-        description: 'Mesmas regras de valor de POST /pessoas para os campos de pessoa física, ds_cpf e ds_cnpj — '
-            . 'inclusive o empty-string-vira-null nos dez campos novos mais ds_cpf (ds_cnpj é a exceção: string '
-            . 'vazia nele reprova a validação — required_if quando sn_pessoa_juridica=true —, não vira null), a '
-            . 'aceitação de máscara ou número JSON sem aspas em ds_cpf/ds_cnpj (validado por dígito verificador nos '
-            . 'dois formatos), e o descarte silencioso dos '
-            . 'campos do tipo que a pessoa NÃO vai ser (física quando sn_pessoa_juridica=true, ou o contrário). Login '
-            . 'admin ou administrador nunca tem física/jurídica GRAVADA por esta API, mesmo que os campos venham no '
-            . 'payload — mas pode aparecer com fisica/juridica preenchida na resposta se já existir dado órfão de '
-            . 'legado para essa conta; a API não cria nem apaga esse dado. '
-            . 'ATENÇÃO — PUT SUBSTITUI, MAS NÃO LIMPA POR OMISSÃO: um campo dos dez novos de física que fica DE FORA do '
-            . 'payload mantém o valor atual gravado; para apagar um deles, envie null explicitamente, não basta omitir. '
-            . 'ATENÇÃO — TROCAR O TIPO DESTRÓI DADO: um PUT que muda sn_pessoa_juridica apaga de vez a linha do tipo '
-            . 'antigo (unim_pessoa_fisica ou unim_pessoa_juridica) — virar jurídica destrói CPF e os dez campos novos '
-            . 'de física, sem confirmação e sem soft delete.',
+        description: 'Mesmo escopo de POST /pessoas: só colunas de unim_pessoa. Campo de pessoa física/jurídica (ou '
+            . 'qualquer campo fora da lista abaixo) responde 422. '
+            . 'ATENÇÃO — TROCAR sn_pessoa_juridica NÃO DESTRÓI MAIS DADO: antes um PUT que invertia o tipo apagava de '
+            . 'vez a linha de unim_pessoa_fisica ou unim_pessoa_juridica (CPF incluso, sem confirmação). Agora essa '
+            . 'linha permanece intacta — ela é de outro recurso, e apagá-la é decisão de quem responde por ele. Em '
+            . 'troca, uma pessoa pode ficar marcada como jurídica com dado de física ainda gravado no banco. '
+            . 'Este verbo invalida o cache do detalhe da pessoa (ver GET /pessoas/{id}).',
         content: new OA\JsonContent(
             required: ['ds_nome', 'ds_login', 'sn_pessoa_juridica'],
             properties: [
-                new OA\Property(property: 'ds_nome', type: 'string', maxLength: 255),
-                new OA\Property(property: 'ds_login', type: 'string', maxLength: 100),
-                new OA\Property(property: 'ds_senha', type: 'string', minLength: 6, nullable: true),
-                new OA\Property(property: 'sn_pessoa_juridica', type: 'boolean'),
-                new OA\Property(property: 'ds_nome_oficial', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = false'),
-                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas — nos dois casos o valor é validado por dígito verificador. String vazia é tratada como ausência de valor e vira null (mesmo efeito de enviar null); valor não vazio que não sobra em dígitos (ex.: "abc") é rejeitado com 422.', example: '52998224725', nullable: true),
-                new OA\Property(property: 'ds_cnpj', type: 'string', description: 'Obrigatório quando sn_pessoa_juridica = true. CNPJ com 14 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '00000000000191'),
-                new OA\Property(property: 'ds_nome_fantasia', type: 'string', maxLength: 255, description: 'Obrigatório quando sn_pessoa_juridica = true'),
-                new OA\Property(property: 'ds_nome_social', type: 'string', maxLength: 255, nullable: true, example: 'Ana'),
-                new OA\Property(property: 'ds_nome_mae', type: 'string', maxLength: 255, nullable: true, example: 'Maria Souza'),
-                new OA\Property(property: 'ds_nome_pai', type: 'string', maxLength: 255, nullable: true, example: 'Jose Souza'),
-                new OA\Property(property: 'ds_identidade', type: 'string', maxLength: 255, nullable: true, example: '123456789'),
-                new OA\Property(property: 'ds_orgao_estado', type: 'string', maxLength: 255, nullable: true, description: 'UF do órgão expedidor da identidade.', example: 'SP'),
-                new OA\Property(property: 'ds_identidade_orgao_exp', type: 'string', maxLength: 255, nullable: true, description: 'Órgão expedidor da identidade.', example: 'SSP'),
-                new OA\Property(property: 'dt_identidade_expedicao', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura. Comparada com dt_nascimento só quando as duas vêm no MESMO payload — nesse caso não pode ser anterior a ela; enviada sozinha, não exige dt_nascimento.', example: '2015-03-01'),
-                new OA\Property(property: 'dt_nascimento', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura.', example: '1990-05-12'),
-                new OA\Property(property: 'ds_sexo', type: 'string', enum: ['f', 'm'], nullable: true, description: 'Só f, m ou null (espaços nas pontas são cortados; F/M maiúsculo também são aceitos e gravados em minúsculo).', example: 'f'),
-                new OA\Property(property: 'cd_estado_civil', type: 'integer', nullable: true, description: 'Código de saas_estado_civil; precisa existir na tabela. Rótulo em GET /estados-civis.', example: 37),
+                new OA\Property(property: 'ds_nome', type: 'string', maxLength: 255, example: 'Ana Souza'),
+                new OA\Property(property: 'ds_login', type: 'string', maxLength: 100, description: 'Único por cliente (a própria pessoa é ignorada na checagem). Login de outra pessoa responde 409.', example: 'ana.souza'),
+                new OA\Property(property: 'ds_senha', type: 'string', minLength: 6, nullable: true, description: 'Omitida ou null mantém a senha atual.'),
+                new OA\Property(property: 'sn_pessoa_juridica', type: 'boolean', description: 'false = pessoa física, true = pessoa jurídica. Trocar o valor não mexe em unim_pessoa_fisica/unim_pessoa_juridica.', example: false),
             ]
         )
     )]
     #[OA\Response(
         response: 200,
-        description: 'Pessoa atualizada. A resposta ignora ?fields= e traz o registro completo, dado pessoal incluso — é o '
-            . 'que o servidor gravou. CPF e CNPJ voltam sem máscara e ds_sexo em minúsculo, mesmo que enviados de outra '
-            . 'forma; nos dez campos novos de pessoa física, string vazia enviada volta como null. '
-            . 'Campo dos dez novos que ficou DE FORA do payload mantém o valor gravado anteriormente — PUT não limpa por '
-            . 'omissão. Se sn_pessoa_juridica mudou, a linha do tipo antigo (física ou jurídica) foi apagada de vez.',
+        description: 'Pessoa atualizada. A resposta ignora ?fields= e traz o registro completo de unim_pessoa — é o que '
+            . 'o servidor gravou.',
         content: new OA\JsonContent(
             properties: [
                 new OA\Property(property: 'success', type: 'boolean', example: true),
@@ -166,17 +132,18 @@ class PessoaController extends AbstractController
     )]
     #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
-    #[OA\Response(response: 404, description: 'Pessoa não encontrada', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 404, description: 'Pessoa não encontrada (ou de outro cliente)', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(
         response: 409,
-        description: 'Já existe pessoa com esse login para este cliente. Mesma resposta (mesma mensagem) para uma '
-            . 'violação de chave estrangeira em qualquer coluna FK do payload (SQLSTATE 23000, mapeado para 409 por '
-            . 'App\Exception\Handler\DatabaseExceptionHandler) — hoje só cd_estado_civil tem guarda própria (regra '
-            . 'exists, vira 422 antes de chegar ao banco); qualquer outra FK sem essa guarda cai aqui, indistinguível '
-            . 'de login duplicado.',
+        description: 'Já existe pessoa com esse login para este cliente, ou violação de chave estrangeira (SQLSTATE '
+            . '23000, mapeado para 409 por App\Exception\Handler\DatabaseExceptionHandler).',
         content: new OA\JsonContent(ref: '#/components/schemas/Erro')
     )]
-    #[OA\Response(response: 422, description: 'Dados inválidos', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
+    #[OA\Response(
+        response: 422,
+        description: 'Dados inválidos, OU campo que não pertence a este recurso. A chave de errors é o nome do campo recusado.',
+        content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao')
+    )]
     public function atualizar(int $id, UpdatePessoaRequest $request): ResponseInterface
     {
         $pessoa = $this->pessoaService->atualizar($id, IdentidadeContext::cdCliente(), Tipo::mapa($request->validated()));
@@ -188,48 +155,25 @@ class PessoaController extends AbstractController
     #[OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))]
     #[OA\RequestBody(
         required: true,
-        description: 'Envie só os campos que quer trocar — nenhum é obrigatório aqui, mas o payload precisa ter ao menos '
-            . 'um. Campo do tipo que a pessoa NÃO é (física em jurídica, ou o contrário) é ignorado em silêncio, e PATCH '
-            . 'nunca troca o tipo da pessoa nem apaga a linha do outro tipo. Campo omitido simplesmente não é tocado — '
-            . 'PATCH, ao contrário de PUT, não tem essa ambiguidade. Mesmas regras de valor de POST /pessoas nos demais '
-            . 'campos: nos dez campos novos de pessoa física mais ds_cpf, string vazia vira null (mesmo efeito de '
-            . 'enviar null; ds_cnpj é a exceção, string vazia nele reprova a validação); ds_cpf/ds_cnpj aceitam '
-            . 'máscara ou número JSON sem aspas, validado por dígito verificador nos dois formatos. '
-            . 'ATENÇÃO: diferente de POST/PUT, PATCH não isenta os logins admin/administrador de física/jurídica — se a '
-            . 'pessoa já tiver sn_pessoa_juridica definido, os campos do tipo correspondente são gravados normalmente '
-            . 'também para essas contas. sn_pessoa_juridica é nullable, e quando a pessoa ainda não tem esse valor '
-            . 'definido (null), atualizarParcial() trata null como falso — a pessoa é tratada como física e os campos '
-            . 'de física são gravados normalmente, mesmo para admin/administrador.',
+        description: 'Envie só os campos que quer trocar — nenhum é obrigatório, mas o payload precisa ter ao menos um '
+            . '(payload vazio responde 422). Campo omitido não é tocado. '
+            . 'Mesmo escopo de POST/PUT: só colunas de unim_pessoa; campo de pessoa física/jurídica responde 422. '
+            . 'MUDANÇA DE CONTRATO: sn_pessoa_juridica agora PODE ser alterado por PATCH. Antes era recusado em '
+            . 'silêncio, porque trocar o tipo mexia nas tabelas filhas; essas tabelas saíram desta API, então o campo é '
+            . 'só mais uma coluna de unim_pessoa. Trocar o valor não mexe em unim_pessoa_fisica/unim_pessoa_juridica. '
+            . 'Este verbo invalida o cache do detalhe da pessoa (ver GET /pessoas/{id}).',
         content: new OA\JsonContent(
             properties: [
-                new OA\Property(property: 'ds_nome', type: 'string', maxLength: 255),
-                new OA\Property(property: 'ds_login', type: 'string', maxLength: 100),
-                new OA\Property(property: 'ds_senha', type: 'string', minLength: 6),
-                new OA\Property(property: 'ds_nome_oficial', type: 'string', maxLength: 255),
-                new OA\Property(property: 'ds_cpf', type: 'string', description: 'CPF com 11 dígitos e DV válido. Aceita máscara ou número JSON sem aspas — nos dois casos o valor é validado por dígito verificador. String vazia é tratada como ausência de valor e vira null (mesmo efeito de enviar null); valor não vazio que não sobra em dígitos (ex.: "abc") é rejeitado com 422.', example: '52998224725', nullable: true),
-                new OA\Property(property: 'ds_cnpj', type: 'string', description: 'CNPJ com 14 dígitos e DV válido. Aceita máscara ou número JSON sem aspas.', example: '00000000000191'),
-                new OA\Property(property: 'ds_nome_fantasia', type: 'string', maxLength: 255),
-                new OA\Property(property: 'ds_nome_social', type: 'string', maxLength: 255, nullable: true, example: 'Ana'),
-                new OA\Property(property: 'ds_nome_mae', type: 'string', maxLength: 255, nullable: true, example: 'Maria Souza'),
-                new OA\Property(property: 'ds_nome_pai', type: 'string', maxLength: 255, nullable: true, example: 'Jose Souza'),
-                new OA\Property(property: 'ds_identidade', type: 'string', maxLength: 255, nullable: true, example: '123456789'),
-                new OA\Property(property: 'ds_orgao_estado', type: 'string', maxLength: 255, nullable: true, description: 'UF do órgão expedidor da identidade.', example: 'SP'),
-                new OA\Property(property: 'ds_identidade_orgao_exp', type: 'string', maxLength: 255, nullable: true, description: 'Órgão expedidor da identidade.', example: 'SSP'),
-                new OA\Property(property: 'dt_identidade_expedicao', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura. Comparada com dt_nascimento só quando as duas vêm no MESMO PATCH — nesse caso não pode ser anterior a ela; enviada sozinha, não exige dt_nascimento.', example: '2015-03-01'),
-                new OA\Property(property: 'dt_nascimento', type: 'string', format: 'date', nullable: true, description: 'Y-m-d. Não pode ser futura.', example: '1990-05-12'),
-                new OA\Property(property: 'ds_sexo', type: 'string', enum: ['f', 'm'], nullable: true, description: 'Só f, m ou null (espaços nas pontas são cortados; F/M maiúsculo também são aceitos e gravados em minúsculo).', example: 'f'),
-                new OA\Property(property: 'cd_estado_civil', type: 'integer', nullable: true, description: 'Código de saas_estado_civil; precisa existir na tabela. Rótulo em GET /estados-civis.', example: 37),
+                new OA\Property(property: 'ds_nome', type: 'string', maxLength: 255, example: 'Ana Souza'),
+                new OA\Property(property: 'ds_login', type: 'string', maxLength: 100, description: 'Único por cliente. Login de outra pessoa responde 409.', example: 'ana.souza'),
+                new OA\Property(property: 'ds_senha', type: 'string', minLength: 6, description: 'Gravada com hash bcrypt; nunca é devolvida.'),
+                new OA\Property(property: 'sn_pessoa_juridica', type: 'boolean', description: 'false = física, true = jurídica.', example: false),
             ]
         )
     )]
     #[OA\Response(
         response: 200,
-        description: 'Pessoa atualizada. A resposta ignora ?fields= e traz o registro completo, dado pessoal incluso — é o '
-            . 'que o servidor gravou. CPF e CNPJ voltam sem máscara e ds_sexo em minúsculo, mesmo que enviados de outra '
-            . 'forma; nos dez campos novos de pessoa física, string vazia enviada volta como null. '
-            . 'Campo do tipo que a pessoa NÃO é (física em jurídica, ou o contrário) é ignorado em silêncio, e PATCH nunca '
-            . 'troca o tipo. A regra cruzada de dt_identidade_expedicao contra dt_nascimento só é avaliada quando as duas '
-            . 'datas vêm no mesmo payload.',
+        description: 'Pessoa atualizada. A resposta ignora ?fields= e traz o registro completo de unim_pessoa.',
         content: new OA\JsonContent(
             properties: [
                 new OA\Property(property: 'success', type: 'boolean', example: true),
@@ -240,17 +184,17 @@ class PessoaController extends AbstractController
     )]
     #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
-    #[OA\Response(response: 404, description: 'Pessoa não encontrada', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 404, description: 'Pessoa não encontrada (ou de outro cliente)', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(
         response: 409,
-        description: 'Já existe pessoa com esse login para este cliente. Mesma resposta (mesma mensagem) para uma '
-            . 'violação de chave estrangeira em qualquer coluna FK do payload (SQLSTATE 23000, mapeado para 409 por '
-            . 'App\Exception\Handler\DatabaseExceptionHandler) — hoje só cd_estado_civil tem guarda própria (regra '
-            . 'exists, vira 422 antes de chegar ao banco); qualquer outra FK sem essa guarda cai aqui, indistinguível '
-            . 'de login duplicado.',
+        description: 'Já existe pessoa com esse login para este cliente, ou violação de chave estrangeira (SQLSTATE 23000).',
         content: new OA\JsonContent(ref: '#/components/schemas/Erro')
     )]
-    #[OA\Response(response: 422, description: 'Dados inválidos (ou nenhum campo enviado)', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
+    #[OA\Response(
+        response: 422,
+        description: 'Dados inválidos, nenhum campo enviado, OU campo que não pertence a este recurso.',
+        content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao')
+    )]
     public function atualizarParcial(int $id, PatchPessoaRequest $request): ResponseInterface
     {
         $pessoa = $this->pessoaService->atualizarParcial($id, IdentidadeContext::cdCliente(), Tipo::mapa($request->validated()));
@@ -258,24 +202,36 @@ class PessoaController extends AbstractController
         return $this->response->json(ApiResponse::sucesso(PessoaResource::um($pessoa)));
     }
 
-    #[OA\Get(path: '/pessoas/{id}', summary: 'Busca uma pessoa pelo identificador', tags: ['Pessoa'])]
+    #[OA\Get(
+        path: '/pessoas/{id}',
+        summary: 'Busca uma pessoa pelo identificador (resposta cacheada por 1 hora)',
+        description: 'CACHE: a primeira leitura de cada pessoa vai ao banco e guarda o registro no Redis por '
+            . '3600 segundos (1 hora), na chave `pessoa:{cd_cliente}:{cd_pessoa}`; as leituras seguintes dentro da '
+            . 'janela são servidas do cache, sem consultar o banco. '
+            . 'O cache é por PESSOA, não por combinação de ?fields=: guarda todas as colunas expostas e o recorte de '
+            . 'fields é aplicado na hora de responder, então pedir fields diferentes aproveita a mesma entrada. '
+            . 'PUT, PATCH e DELETE /pessoas/{id} invalidam a entrada na hora — a leitura seguinte volta ao banco. '
+            . 'Escrita feita FORA desta API (direto no banco, ou pelo LMS legado) não invalida nada: nesse caso a '
+            . 'resposta pode ficar desatualizada por até uma hora. '
+            . '404 não é cacheado, e GET /pessoas (listagem) não usa cache nenhum.',
+        tags: ['Pessoa']
+    )]
     #[OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))]
     #[OA\Parameter(
         name: 'fields',
         in: 'query',
-        description: 'Campos a devolver, separados por vírgula (mesma sintaxe de GET /pessoas). '
-            . 'Sem este parâmetro o detalhe devolve o registro completo MENOS o dado pessoal — diferente da listagem, que devolve um conjunto enxuto. '
-            . 'Dado pessoal (fisica.ds_cpf, fisica.ds_identidade, fisica.ds_nome_mae, fisica.ds_nome_pai, fisica.dt_nascimento) só vem se pedido por nome ou por curinga (fisica.* ou *). '
-            . 'Campos disponíveis: cd_pessoa, cd_cliente, ds_nome, ds_login, sn_pessoa_juridica, '
-            . 'fisica.ds_nome_oficial, fisica.ds_nome_social, fisica.ds_nome_mae, fisica.ds_nome_pai, fisica.ds_cpf, '
-            . 'fisica.ds_identidade, fisica.ds_orgao_estado, fisica.ds_identidade_orgao_exp, fisica.dt_identidade_expedicao, '
-            . 'fisica.dt_nascimento, fisica.ds_sexo, fisica.cd_estado_civil, juridica.ds_cnpj, juridica.ds_nome_fantasia.',
-        schema: new OA\Schema(type: 'string', example: 'ds_nome,fisica.ds_cpf')
+        description: 'Campos a devolver, separados por vírgula (mesma sintaxe de GET /pessoas). Sem este parâmetro o '
+            . 'detalhe devolve o registro completo; a listagem é que devolve um conjunto enxuto. '
+            . 'Campos disponíveis (todos de unim_pessoa): cd_pessoa, cd_cliente, ds_nome, ds_login, sn_pessoa_juridica. '
+            . 'MUDANÇA DE CONTRATO: os campos de relação (fisica.* e juridica.*) não existem mais aqui — pedi-los '
+            . 'responde 422, porque pessoa física e jurídica são recursos próprios. Por isso `fields=*` hoje devolve '
+            . 'exatamente esses cinco campos.',
+        schema: new OA\Schema(type: 'string', example: 'ds_nome,ds_login')
     )]
     #[OA\Response(
         response: 200,
-        description: 'Pessoa encontrada. Por padrão vem o registro completo SEM o dado pessoal; com ?fields= vem só o que foi pedido, dado pessoal incluso se pedido explicitamente. '
-            . 'ATENÇÃO: mudança de contrato — ds_cpf costumava vir por padrão e agora não vem mais.',
+        description: 'Pessoa encontrada. Sem ?fields= vêm os cinco campos de unim_pessoa; com ?fields= vem só o que foi '
+            . 'pedido. A resposta pode vir do cache (ver a descrição do endpoint) — o corpo é idêntico nos dois casos.',
         content: new OA\JsonContent(
             properties: [
                 new OA\Property(property: 'success', type: 'boolean', example: true),
@@ -286,40 +242,51 @@ class PessoaController extends AbstractController
     )]
     #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
-    #[OA\Response(response: 404, description: 'Pessoa não encontrada', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
-    #[OA\Response(response: 422, description: 'Dados inválidos', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
+    #[OA\Response(response: 404, description: 'Pessoa não encontrada (ou de outro cliente)', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(
+        response: 422,
+        description: 'fields com campo que não existe no mapa de pessoa (inclusive fisica.* e juridica.*, que saíram desta API).',
+        content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao')
+    )]
     public function buscar(int $id, BuscarPessoaRequest $request): ResponseInterface
     {
         $fields = Tipo::mapa($request->validated())['fields'] ?? null;
         $selecao = MapaDeCamposPessoa::selecao(is_string($fields) ? $fields : null, padraoEhTudo: true);
 
-        $pessoa = $this->pessoaService->buscar($id, IdentidadeContext::cdCliente(), $selecao);
+        // O Service devolve a pessoa inteira (do cache ou do banco); o recorte de fields é
+        // do Resource. É o que permite uma única entrada de cache servir qualquer fields.
+        $pessoa = $this->pessoaService->buscar($id, IdentidadeContext::cdCliente());
 
         return $this->response->json(ApiResponse::sucesso(PessoaResource::um($pessoa, $selecao)));
     }
 
-    #[OA\Get(path: '/pessoas', summary: 'Lista pessoas do cliente autenticado', tags: ['Pessoa'])]
+    #[OA\Get(
+        path: '/pessoas',
+        summary: 'Lista pessoas do cliente autenticado',
+        description: 'Esta listagem NÃO é cacheada (o cache de 1 hora existe só em GET /pessoas/{id}): o resultado '
+            . 'depende de filtro, página e fields, e reflete o banco a cada requisição.',
+        tags: ['Pessoa']
+    )]
     #[OA\Parameter(name: 'page', in: 'query', schema: new OA\Schema(type: 'integer', default: 1))]
-    #[OA\Parameter(name: 'per_page', in: 'query', schema: new OA\Schema(type: 'integer', default: 20, maximum: 100))]
-    #[OA\Parameter(name: 'nome', in: 'query', schema: new OA\Schema(type: 'string'))]
-    #[OA\Parameter(name: 'tipo_pessoa', in: 'query', schema: new OA\Schema(type: 'string', enum: ['fisica', 'juridica']))]
+    #[OA\Parameter(name: 'per_page', in: 'query', description: 'Máximo 100. Valor maior é reduzido a 100 em silêncio, e o meta devolvido já reflete o valor efetivo.', schema: new OA\Schema(type: 'integer', default: 20, maximum: 100))]
+    #[OA\Parameter(name: 'nome', in: 'query', description: 'Filtro por parte do nome (LIKE %nome%).', schema: new OA\Schema(type: 'string'))]
+    #[OA\Parameter(name: 'tipo_pessoa', in: 'query', description: 'Filtra por sn_pessoa_juridica: fisica = false, juridica = true. É filtro por coluna de unim_pessoa, não por existência de registro em unim_pessoa_fisica/unim_pessoa_juridica.', schema: new OA\Schema(type: 'string', enum: ['fisica', 'juridica']))]
     #[OA\Parameter(
         name: 'fields',
         in: 'query',
-        description: 'Campos a devolver, separados por vírgula. Campo de relação usa ponto (fisica.ds_cpf), e relação inteira usa curinga (fisica.*). `fields=*` devolve tudo, dado pessoal incluso. '
-            . 'ATENÇÃO: sem este parâmetro a LISTA devolve apenas cd_pessoa, ds_nome, ds_login e sn_pessoa_juridica — diferente de GET /pessoas/{id}, que devolve o registro completo menos o dado pessoal. '
-            . 'Campos disponíveis: cd_pessoa, cd_cliente, ds_nome, ds_login, sn_pessoa_juridica, '
-            . 'fisica.ds_nome_oficial, fisica.ds_nome_social, fisica.ds_nome_mae, fisica.ds_nome_pai, fisica.ds_cpf, '
-            . 'fisica.ds_identidade, fisica.ds_orgao_estado, fisica.ds_identidade_orgao_exp, fisica.dt_identidade_expedicao, '
-            . 'fisica.dt_nascimento, fisica.ds_sexo, fisica.cd_estado_civil, juridica.ds_cnpj, juridica.ds_nome_fantasia.',
-        schema: new OA\Schema(type: 'string', example: 'ds_nome,fisica.ds_cpf')
+        description: 'Campos a devolver, separados por vírgula. `fields=*` devolve todos. '
+            . 'ATENÇÃO: sem este parâmetro a LISTA devolve apenas cd_pessoa, ds_nome, ds_login e sn_pessoa_juridica — '
+            . 'diferente de GET /pessoas/{id}, que devolve o registro completo. '
+            . 'Campos disponíveis (todos de unim_pessoa): cd_pessoa, cd_cliente, ds_nome, ds_login, sn_pessoa_juridica. '
+            . 'MUDANÇA DE CONTRATO: fisica.* e juridica.* não existem mais aqui — pedi-los responde 422.',
+        schema: new OA\Schema(type: 'string', example: 'ds_nome,cd_cliente')
     )]
     #[OA\Response(
         response: 200,
         description: 'Lista paginada. Sem ?fields=, cada item traz apenas os campos de PessoaResumida; '
             . 'com ?fields= (ou fields=*), cada item segue o schema Pessoa recortado pelo que foi pedido — por isso '
             . 'o item é oneOf[PessoaResumida, Pessoa] e não um $ref fixo: um cliente gerado a partir deste schema '
-            . 'que travasse em PessoaResumida rejeitaria qualquer resposta a ?fields=fisica.*.',
+            . 'que travasse em PessoaResumida rejeitaria a resposta a ?fields=cd_cliente.',
         content: new OA\JsonContent(
             properties: [
                 new OA\Property(property: 'success', type: 'boolean', example: true),
@@ -338,7 +305,7 @@ class PessoaController extends AbstractController
     )]
     #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
-    #[OA\Response(response: 422, description: 'Dados inválidos', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
+    #[OA\Response(response: 422, description: 'Parâmetro inválido, inclusive fields com campo fora do mapa de pessoa', content: new OA\JsonContent(ref: '#/components/schemas/ErroValidacao'))]
     public function listar(ListPessoaRequest $request): ResponseInterface
     {
         $validado = Tipo::mapa($request->validated());
@@ -363,22 +330,30 @@ class PessoaController extends AbstractController
         ));
     }
 
-    #[OA\Delete(path: '/pessoas/{id}', summary: 'Exclui uma pessoa existente', tags: ['Pessoa'])]
+    #[OA\Delete(
+        path: '/pessoas/{id}',
+        summary: 'Exclui uma pessoa existente',
+        description: 'Soft delete em unim_pessoa e invalidação do cache do detalhe. Registro de pessoa física ou '
+            . 'jurídica ligado a esta pessoa NÃO é tocado — é de outro recurso.',
+        tags: ['Pessoa']
+    )]
     #[OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))]
     #[OA\Response(
         response: 200,
-        description: 'Pessoa excluída. É soft delete: a linha permanece com dt_excluido preenchido e para de aparecer nas leituras.',
+        description: 'Pessoa excluída. É soft delete: a linha permanece com dt_excluido preenchido e para de aparecer '
+            . 'nas leituras. O cache do detalhe é apagado na hora, então o GET seguinte responde 404 e não a versão '
+            . 'cacheada.',
         content: new OA\JsonContent(
             properties: [
                 new OA\Property(property: 'success', type: 'boolean', example: true),
-                new OA\Property(property: 'data', type: 'boolean', example: true),
+                new OA\Property(property: 'data', description: 'Sempre null neste endpoint — a exclusão não devolve corpo de dado.', type: 'boolean', example: null, nullable: true),
             ],
             type: 'object'
         )
     )]
     #[OA\Response(response: 401, description: 'Não autenticado', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     #[OA\Response(response: 403, description: 'Sem permissão', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
-    #[OA\Response(response: 404, description: 'Pessoa não encontrada', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
+    #[OA\Response(response: 404, description: 'Pessoa não encontrada (ou de outro cliente)', content: new OA\JsonContent(ref: '#/components/schemas/Erro'))]
     public function excluir(int $id): ResponseInterface
     {
         $this->pessoaService->excluir($id, IdentidadeContext::cdCliente());

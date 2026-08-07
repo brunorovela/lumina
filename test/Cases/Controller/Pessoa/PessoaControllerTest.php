@@ -14,6 +14,7 @@ namespace HyperfTest\Cases\Controller\Pessoa;
 
 use App\Enum\Privilegio;
 use App\Enum\Recurso;
+use App\Service\Pessoa\CachePessoa;
 use Hyperf\DbConnection\Db;
 use Hyperf\Redis\Redis;
 use Hyperf\Testing\TestCase;
@@ -62,20 +63,28 @@ class PessoaControllerTest extends TestCase
     protected function tearDown(): void
     {
         $idsPessoa = Db::table('unim_pessoa')->where('ds_login', 'like', 'teste.http.%')->pluck('cd_pessoa');
-        Db::table('unim_pessoa_fisica')->whereIn('cd_pessoa', $idsPessoa)->delete();
-        Db::table('unim_pessoa_juridica')->whereIn('cd_pessoa', $idsPessoa)->delete();
+
+        // O cache do detalhe sobrevive ao DELETE das linhas feito aqui (TTL de uma hora), e
+        // um cd_pessoa cacheado sem linha no banco faria um teste posterior ler dado de
+        // outro teste. Limpar a chave junto com a linha mantém os testes independentes.
+        $redis = $this->getContainer()->get(Redis::class);
+        $cache = $this->getContainer()->get(CachePessoa::class);
+
+        foreach ($idsPessoa as $cdPessoa) {
+            $redis->del($cache->chave(TenantDeTeste::cdCliente(), (int) $cdPessoa));
+        }
+
         Db::table('unim_pessoa')->where('ds_login', 'like', 'teste.http.%')->delete();
         parent::tearDown();
     }
 
-    public function testCriarBuscarAtualizarEExcluirPessoaFisica()
+    public function testCriarBuscarAtualizarEExcluirPessoa()
     {
         $criar = $this->json('/pessoas', [
             'ds_nome' => 'Http Teste',
             'ds_login' => 'teste.http.crud',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Oficial',
         ], $this->headers());
 
         $criar->assertStatus(201);
@@ -96,41 +105,119 @@ class PessoaControllerTest extends TestCase
         $buscarDepoisDeExcluir->assertStatus(404);
     }
 
-    public function testPutTrocandoFisicaParaJuridicaApagaOFilhoAntigo()
+    /**
+     * A criação não toca unim_pessoa_fisica: essa tabela é de outro recurso. Antes, um POST
+     * com sn_pessoa_juridica=false criava a linha filha junto — quem depender disso precisa
+     * saber que mudou.
+     */
+    public function testCriarNaoEscreveNaTabelaDePessoaFisica()
     {
-        // CRITICAL Finding 1 (whole-branch review): PUT trocando o tipo pessoa
-        // (física -> jurídica) não podia deixar a linha antiga em unim_pessoa_fisica
-        // órfã (pessoa com fisica E juridica preenchidas ao mesmo tempo).
         $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Troca Tipo',
-            'ds_login' => 'teste.http.trocatipo',
+            'ds_nome' => 'Http Sem Filho',
+            'ds_login' => 'teste.http.semfilho',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Troca Tipo Oficial',
         ], $this->headers());
 
         $criar->assertStatus(201);
         $cdPessoa = $criar->json('data.cd_pessoa');
-        $this->assertNotNull($criar->json('data.fisica'));
 
-        $atualizar = $this->put("/pessoas/{$cdPessoa}", [
-            'ds_nome' => 'Http Teste Troca Tipo',
-            'ds_login' => 'teste.http.trocatipo',
+        $this->assertSame(0, Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->count());
+        $this->assertSame(0, Db::table('unim_pessoa_juridica')->where('cd_pessoa', $cdPessoa)->count());
+    }
+
+    /**
+     * O modo de falha que este endpoint NÃO pode ter: aceitar ds_cpf, responder 201 e não
+     * gravar nada. A recusa vem com o nome do campo em errors, para o cliente antigo saber
+     * exatamente o que saiu.
+     */
+    public function testCampoDePessoaFisicaNoPostResponde422ENaoEDescartadoEmSilencio()
+    {
+        $resposta = $this->json('/pessoas', [
+            'ds_nome' => 'Http Campo Estranho',
+            'ds_login' => 'teste.http.campoestranho',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+            'ds_cpf' => '52998224725',
+            'ds_nome_oficial' => 'Http Campo Estranho Oficial',
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('ds_cpf', $resposta->json('errors'));
+        $this->assertArrayHasKey('ds_nome_oficial', $resposta->json('errors'));
+        $this->assertSame(0, Db::table('unim_pessoa')->where('ds_login', 'teste.http.campoestranho')->count());
+    }
+
+    public function testCampoDePessoaJuridicaNoPutResponde422()
+    {
+        $cdPessoa = $this->criarPessoa('teste.http.putestranho', 'Http Put Estranho');
+
+        $resposta = $this->put("/pessoas/{$cdPessoa}", [
+            'ds_nome' => 'Http Put Estranho',
+            'ds_login' => 'teste.http.putestranho',
             'sn_pessoa_juridica' => true,
             'ds_cnpj' => '00000000000191',
-            'ds_nome_fantasia' => 'Http Teste Troca Tipo Fantasia',
+            'ds_nome_fantasia' => 'Http Put Estranho Fantasia',
+        ], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('ds_cnpj', $resposta->json('errors'));
+        $this->assertArrayHasKey('ds_nome_fantasia', $resposta->json('errors'));
+    }
+
+    public function testCampoDePessoaFisicaNoPatchResponde422()
+    {
+        $cdPessoa = $this->criarPessoa('teste.http.patchestranho', 'Http Patch Estranho');
+
+        $resposta = $this->patch("/pessoas/{$cdPessoa}", ['ds_nome_social' => 'Patchado'], $this->headers());
+
+        $resposta->assertStatus(422);
+        $this->assertArrayHasKey('ds_nome_social', $resposta->json('errors'));
+    }
+
+    /**
+     * PATCH passou a aceitar sn_pessoa_juridica: o motivo de ele ser recusado antes era a
+     * escrita nas tabelas filhas, que saiu desta API. Trocar o tipo não mexe em
+     * unim_pessoa_fisica/unim_pessoa_juridica.
+     */
+    public function testPatchPodeTrocarOTipoESemMexerNaTabelaDoOutroRecurso()
+    {
+        $cdPessoa = $this->criarPessoa('teste.http.patchtipo', 'Http Patch Tipo');
+
+        // Linha de física inserida à mão simula o que o outro recurso (ou o LMS legado)
+        // teria gravado: o PATCH não pode apagá-la.
+        Db::table('unim_pessoa_fisica')->insert(['cd_pessoa' => $cdPessoa, 'ds_nome_oficial' => 'Http Patch Tipo Oficial']);
+
+        $patch = $this->patch("/pessoas/{$cdPessoa}", ['sn_pessoa_juridica' => true], $this->headers());
+
+        $patch->assertStatus(200);
+        $this->assertTrue($patch->json('data.sn_pessoa_juridica'));
+        $this->assertSame(1, Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->count());
+
+        Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->delete();
+    }
+
+    /**
+     * PUT invertendo o tipo NÃO apaga mais a linha do tipo antigo — antes apagava, e com
+     * ela o CPF, sem confirmação. Agora esse dado é de outro recurso.
+     */
+    public function testPutTrocandoOTipoNaoApagaMaisALinhaDoOutroRecurso()
+    {
+        $cdPessoa = $this->criarPessoa('teste.http.trocatipo', 'Http Troca Tipo');
+
+        Db::table('unim_pessoa_fisica')->insert(['cd_pessoa' => $cdPessoa, 'ds_nome_oficial' => 'Http Troca Tipo Oficial']);
+
+        $atualizar = $this->put("/pessoas/{$cdPessoa}", [
+            'ds_nome' => 'Http Troca Tipo',
+            'ds_login' => 'teste.http.trocatipo',
+            'sn_pessoa_juridica' => true,
         ], $this->headers());
 
         $atualizar->assertStatus(200);
-        $this->assertNull($atualizar->json('data.fisica'));
-        $this->assertNotNull($atualizar->json('data.juridica'));
-        $this->assertSame('00000000000191', $atualizar->json('data.juridica.ds_cnpj'));
+        $this->assertTrue($atualizar->json('data.sn_pessoa_juridica'));
+        $this->assertSame(1, Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->count());
 
-        $linhaFisicaOrfa = Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->first();
-        $this->assertNull($linhaFisicaOrfa);
-
-        $linhaJuridica = Db::table('unim_pessoa_juridica')->where('cd_pessoa', $cdPessoa)->first();
-        $this->assertNotNull($linhaJuridica);
+        Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->delete();
     }
 
     public function testCriarExcluirERecriarComMesmoLoginDevolveLoginJaExisteEmVezDeErroGenericoDeBanco()
@@ -142,16 +229,7 @@ class PessoaControllerTest extends TestCase
         // de negócio (LoginJaExisteException, mensagem clara).
         $login = 'teste.http.loginreciclado';
 
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Login Reciclado',
-            'ds_login' => $login,
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Login Reciclado',
-        ], $this->headers());
-
-        $criar->assertStatus(201);
-        $cdPessoa = $criar->json('data.cd_pessoa');
+        $cdPessoa = $this->criarPessoa($login, 'Http Teste Login Reciclado');
 
         $this->delete("/pessoas/{$cdPessoa}", [], $this->headers())->assertStatus(200);
 
@@ -160,7 +238,6 @@ class PessoaControllerTest extends TestCase
             'ds_login' => $login,
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Login Reciclado Duas',
         ], $this->headers());
 
         $recriar->assertStatus(409);
@@ -172,13 +249,7 @@ class PessoaControllerTest extends TestCase
 
     public function testListarComFiltroDeNomeEPaginacao()
     {
-        $this->json('/pessoas', [
-            'ds_nome' => 'Http Lista Um',
-            'ds_login' => 'teste.http.lista1',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Lista Um',
-        ], $this->headers());
+        $this->criarPessoa('teste.http.lista1', 'Http Lista Um');
 
         $listar = $this->get('/pessoas?nome=Lista&per_page=10', [], $this->headers());
 
@@ -202,13 +273,7 @@ class PessoaControllerTest extends TestCase
         // O tenant de teste é compartilhado pela suíte inteira (TenantDeTeste::limpar() só
         // roda no início/fim, não por teste), e PessoaRepositoryTest cria uma "Selecao
         // Enxuta" — filtrar por "Enxuta" casaria as duas. O termo aqui precisa ser único.
-        $this->json('/pessoas', [
-            'ds_nome' => 'Http Enxuta Unica',
-            'ds_login' => 'teste.http.enxuta',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Enxuta Oficial',
-        ], $this->headers())->assertStatus(201);
+        $this->criarPessoa('teste.http.enxuta', 'Http Enxuta Unica');
 
         $listar = $this->get('/pessoas?nome=Enxuta Unica', [], $this->headers());
 
@@ -219,70 +284,22 @@ class PessoaControllerTest extends TestCase
             ['cd_pessoa', 'ds_nome', 'ds_login', 'sn_pessoa_juridica'],
             array_keys($item)
         );
-        $this->assertArrayNotHasKey('fisica', $item);
         $this->assertArrayNotHasKey('cd_cliente', $item);
     }
 
-    public function testListaComFieldsAsteriscoMantemOContratoAntigo()
+    public function testListaComFieldsAsteriscoDevolveSoAsColunasDePessoa()
     {
         // Termo de filtro único: o tenant de teste é compartilhado pela suíte inteira, então
         // um filtro genérico correria o risco de casar pessoa criada por outro teste.
-        $this->json('/pessoas', [
-            'ds_nome' => 'Http Completa Unica',
-            'ds_login' => 'teste.http.completa',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Completa Oficial',
-        ], $this->headers())->assertStatus(201);
+        $this->criarPessoa('teste.http.completa', 'Http Completa Unica');
 
         $item = $this->get('/pessoas?nome=Completa Unica&fields=*', [], $this->headers())->json('data.0');
 
+        // fields=* não traz mais fisica/juridica: o mapa não tem relação nenhuma.
         $this->assertEqualsCanonicalizing(
-            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica', 'fisica', 'juridica'],
+            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica'],
             array_keys($item)
         );
-        $this->assertSame('Http Completa Oficial', $item['fisica']['ds_nome_oficial']);
-    }
-
-    public function testListaComFieldsDeRelacaoDevolveAninhadoSemVazarChaveDeJoin()
-    {
-        // Termo de filtro único: o tenant de teste é compartilhado pela suíte inteira, então
-        // um filtro genérico correria o risco de casar pessoa criada por outro teste.
-        $this->json('/pessoas', [
-            'ds_nome' => 'Http Relacao Unica',
-            'ds_login' => 'teste.http.relacao',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Relacao Oficial',
-            // Task 7 passou a validar o dígito verificador; '99988877766' (usado antes) não
-            // fecha a conta e o create cairia em 422. Trocado por um CPF de mesma "família"
-            // com DV válido -- o valor em si é irrelevante para o que este teste prova
-            // (fields de relação sem vazar chave de join).
-            'ds_cpf' => '99988877714',
-        ], $this->headers())->assertStatus(201);
-
-        $item = $this->get('/pessoas?nome=Relacao Unica&fields=ds_nome,fisica.ds_cpf', [], $this->headers())->json('data.0');
-
-        $this->assertSame(['ds_nome' => 'Http Relacao Unica', 'fisica' => ['ds_cpf' => '99988877714']], $item);
-    }
-
-    public function testListaComRelacaoPedidaEmPessoaDoOutroTipoDevolveNulo()
-    {
-        // Termo de filtro único: o tenant de teste é compartilhado pela suíte inteira, então
-        // um filtro genérico correria o risco de casar pessoa criada por outro teste.
-        $this->json('/pessoas', [
-            'ds_nome' => 'Http Juridica Selecao Unica',
-            'ds_login' => 'teste.http.juridicasel',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => true,
-            'ds_cnpj' => '00000000000191',
-            'ds_nome_fantasia' => 'Http Juridica Fantasia',
-        ], $this->headers())->assertStatus(201);
-
-        $item = $this->get('/pessoas?nome=Juridica Selecao Unica&fields=ds_nome,fisica.ds_cpf', [], $this->headers())->json('data.0');
-
-        $this->assertArrayHasKey('fisica', $item);
-        $this->assertNull($item['fisica']);
     }
 
     public function testMetaDaPaginacaoNaoMudaComFields()
@@ -382,45 +399,11 @@ class PessoaControllerTest extends TestCase
 
     public function testAtualizarParcialComPayloadVazioRetorna422()
     {
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Patch Vazio',
-            'ds_login' => 'teste.http.patchvazio',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Patch Vazio',
-        ], $this->headers());
-
-        $cdPessoa = $criar->json('data.cd_pessoa');
+        $cdPessoa = $this->criarPessoa('teste.http.patchvazio', 'Http Teste Patch Vazio');
 
         $patch = $this->patch("/pessoas/{$cdPessoa}", [], $this->headers());
 
         $patch->assertStatus(422);
-    }
-
-    public function testPatchComCampoDeTipoErradoIgnoraOCampoENaoCriaFilhoErrado()
-    {
-        // Finding 14 (whole-branch review): PATCH aceitava ds_cnpj numa pessoa física e
-        // criava uma linha em unim_pessoa_juridica pra ela.
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Patch Tipo Errado',
-            'ds_login' => 'teste.http.patchtipoerrado',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Patch Tipo Errado',
-        ], $this->headers());
-
-        $cdPessoa = $criar->json('data.cd_pessoa');
-
-        $patch = $this->patch("/pessoas/{$cdPessoa}", [
-            'ds_cnpj' => '00000000000191',
-            'ds_nome_fantasia' => 'Nao Deveria Existir',
-        ], $this->headers());
-
-        $patch->assertStatus(200);
-        $this->assertNull($patch->json('data.juridica'));
-
-        $linhaJuridica = Db::table('unim_pessoa_juridica')->where('cd_pessoa', $cdPessoa)->first();
-        $this->assertNull($linhaJuridica);
     }
 
     public function testFieldsComCampoInexistenteRetorna422()
@@ -443,47 +426,50 @@ class PessoaControllerTest extends TestCase
         $this->assertSame(['Campo não permitido: ds_senha.'], $resposta->json('errors.fields'));
     }
 
+    /**
+     * Campo de relação saiu do mapa junto com as tabelas filhas: quem tinha ?fields=fisica.*
+     * no cliente precisa de um erro, não de uma resposta silenciosamente sem o dado.
+     */
+    public function testFieldsDeRelacaoAgoraRetorna422NaListaENoDetalhe()
+    {
+        $cdPessoa = $this->criarPessoa('teste.http.fieldsrelacao', 'Http Fields Relacao');
+
+        $lista = $this->get('/pessoas?fields=ds_nome,fisica.ds_cpf', [], $this->headers());
+        $lista->assertStatus(422);
+        $this->assertContains('Campo não permitido: fisica.ds_cpf.', $lista->json('errors.fields'));
+
+        $curinga = $this->get('/pessoas?fields=fisica.*', [], $this->headers());
+        $curinga->assertStatus(422);
+        $this->assertContains('Campo não permitido: fisica.*.', $curinga->json('errors.fields'));
+
+        $detalhe = $this->get("/pessoas/{$cdPessoa}?fields=juridica.ds_cnpj", [], $this->headers());
+        $detalhe->assertStatus(422);
+        $this->assertContains('Campo não permitido: juridica.ds_cnpj.', $detalhe->json('errors.fields'));
+    }
+
     public function testFieldsValidoNaoCaiNa422()
     {
-        $this->get('/pessoas?fields=ds_nome,fisica.ds_cpf', [], $this->headers())->assertStatus(200);
+        $this->get('/pessoas?fields=ds_nome,cd_cliente', [], $this->headers())->assertStatus(200);
         $this->get('/pessoas?fields=*', [], $this->headers())->assertStatus(200);
-        $this->get('/pessoas?fields=fisica.*', [], $this->headers())->assertStatus(200);
         $this->get('/pessoas?fields=', [], $this->headers())->assertStatus(200);
     }
 
     public function testDetalheSemFieldsDevolveCompleto()
     {
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Detalhe',
-            'ds_login' => 'teste.http.detalhe',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Detalhe Oficial',
-        ], $this->headers());
-
-        $criar->assertStatus(201);
-        $cdPessoa = $criar->json('data.cd_pessoa');
+        $cdPessoa = $this->criarPessoa('teste.http.detalhe', 'Http Detalhe');
 
         $item = $this->get("/pessoas/{$cdPessoa}", [], $this->headers())->json('data');
 
         $this->assertEqualsCanonicalizing(
-            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica', 'fisica', 'juridica'],
+            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica'],
             array_keys($item)
         );
-        $this->assertSame('Http Detalhe Oficial', $item['fisica']['ds_nome_oficial']);
+        $this->assertSame('Http Detalhe', $item['ds_nome']);
     }
 
     public function testDetalheComFieldsRecorta()
     {
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Detalhe Recorte',
-            'ds_login' => 'teste.http.detalherecorte',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Detalhe Recorte Oficial',
-        ], $this->headers());
-
-        $cdPessoa = $criar->json('data.cd_pessoa');
+        $cdPessoa = $this->criarPessoa('teste.http.detalherecorte', 'Http Detalhe Recorte');
 
         $item = $this->get("/pessoas/{$cdPessoa}?fields=ds_nome", [], $this->headers())->json('data');
 
@@ -509,12 +495,11 @@ class PessoaControllerTest extends TestCase
             'ds_login' => 'teste.http.escritafields',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Escrita Fields Oficial',
         ], $this->headers());
 
         $criar->assertStatus(201);
         $this->assertEqualsCanonicalizing(
-            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica', 'fisica', 'juridica'],
+            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica'],
             array_keys($criar->json('data'))
         );
 
@@ -524,7 +509,7 @@ class PessoaControllerTest extends TestCase
 
         $patch->assertStatus(200);
         $this->assertEqualsCanonicalizing(
-            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica', 'fisica', 'juridica'],
+            ['cd_pessoa', 'cd_cliente', 'ds_nome', 'ds_login', 'sn_pessoa_juridica'],
             array_keys($patch->json('data'))
         );
     }
@@ -539,62 +524,22 @@ class PessoaControllerTest extends TestCase
         $this->get('/pessoas/1?fields=ds_senha')->assertStatus(401);
     }
 
-    public function testDetalheNaoDevolvePiiSemPedidoExplicito()
-    {
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste PII',
-            'ds_login' => 'teste.http.pii',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste PII Oficial',
-            'ds_cpf' => '12345678909',
-        ], $this->headers());
-
-        $criar->assertStatus(201);
-        // Resposta de escrita traz PII: o cliente precisa confirmar o que foi gravado.
-        $this->assertSame('12345678909', $criar->json('data.fisica.ds_cpf'));
-
-        $cdPessoa = $criar->json('data.cd_pessoa');
-
-        $semFields = $this->get("/pessoas/{$cdPessoa}", [], $this->headers());
-        $semFields->assertStatus(200);
-        $this->assertArrayNotHasKey('ds_cpf', $semFields->json('data.fisica'));
-
-        $porNome = $this->get("/pessoas/{$cdPessoa}", ['fields' => 'fisica.ds_cpf'], $this->headers());
-        $porNome->assertStatus(200);
-        $this->assertSame('12345678909', $porNome->json('data.fisica.ds_cpf'));
-
-        $porCuringa = $this->get("/pessoas/{$cdPessoa}", ['fields' => 'fisica.*'], $this->headers());
-        $porCuringa->assertStatus(200);
-        $this->assertSame('12345678909', $porCuringa->json('data.fisica.ds_cpf'));
-    }
-
     /**
      * Important 3 da revisão final: todo teste de "não encontrado" da suíte usava
      * cd_pessoa = 999999, uma linha que não existe em NENHUM cliente -- isso passaria
      * mesmo se PessoaRepository::buscarPorId() perdesse o ->where('cd_cliente', ...), já
-     * que a linha simplesmente não existe em lugar nenhum. Esta branch colocou quatro
-     * campos de PII (ds_cpf, ds_identidade, ds_nome_mae, ds_nome_pai) atrás desse único
-     * WHERE sem guarda própria -- o teste de isolamento cross-tenant precisa criar uma
-     * pessoa que EXISTE, só que de outro cliente, e provar que ela não vaza.
-     *
-     * Verificado por mutação: comentar o ->where('cd_cliente', $cdCliente) em
-     * PessoaRepository::buscarPorId() faz este teste falhar (200 com fisica.ds_cpf
-     * vazando), confirmando que ele de fato prende a regressão.
+     * que a linha simplesmente não existe em lugar nenhum. O teste de isolamento
+     * cross-tenant precisa criar uma pessoa que EXISTE, só que de outro cliente, e provar
+     * que ela não vaza -- nem pelo banco, nem pelo cache do detalhe (a chave de cache
+     * inclui cd_cliente exatamente por isso).
      */
-    public function testDetalheDeOutroTenantRetorna404ENaoVazaFisica()
+    public function testDetalheDeOutroTenantRetorna404MesmoComOCacheJaQuente()
     {
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Cross Tenant',
-            'ds_login' => 'teste.http.crosstenant',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Cross Tenant Oficial',
-            'ds_cpf' => '52998224725',
-        ], $this->headers());
+        $cdPessoa = $this->criarPessoa('teste.http.crosstenant', 'Http Teste Cross Tenant');
 
-        $criar->assertStatus(201);
-        $cdPessoa = $criar->json('data.cd_pessoa');
+        // Cache quente para o tenant DONO da pessoa: se a chave não fosse por tenant, a
+        // leitura do outro tenant abaixo devolveria este dado sem nem chegar ao banco.
+        $this->get("/pessoas/{$cdPessoa}", [], $this->headers())->assertStatus(200);
 
         // Segundo tenant fabricado direto no Redis, mesmo padrão de
         // EndToEndFlowTest::testIsolamentoCrossTenantPessoaDeUmClienteNaoApareceParaOutro
@@ -615,9 +560,7 @@ class PessoaControllerTest extends TestCase
 
         $headersOutroTenant = ['Authorization' => "Bearer {$tokenOutroTenant}"];
 
-        // pedindo fisica.* explicitamente: se o filtro de tenant vazar, é exatamente aqui
-        // que o ds_cpf apareceria.
-        $buscar = $this->get("/pessoas/{$cdPessoa}", ['fields' => 'fisica.*'], $headersOutroTenant);
+        $buscar = $this->get("/pessoas/{$cdPessoa}", ['fields' => '*'], $headersOutroTenant);
 
         $buscar->assertStatus(404);
         $this->assertArrayNotHasKey('data', $buscar->json());
@@ -626,491 +569,119 @@ class PessoaControllerTest extends TestCase
         $redis->del("acl:perfil:{$cdPerfilOutroTenant}");
     }
 
-    public function testCpfComMascaraPassaPelaRegraDigits()
+    /**
+     * O contrato do cache: a primeira leitura vai ao banco e grava a chave com TTL de uma
+     * hora; a segunda é servida do cache. A prova é uma alteração feita DIRETO no banco
+     * (que a API não vê passar) — se a segunda leitura trouxesse o valor novo, não havia
+     * cache nenhum.
+     */
+    public function testSegundaLeituraVemDoCacheENaoDoBanco()
     {
-        // A normalização roda em validationData(), ANTES das regras: sem ela, "123.456.789-09"
-        // reprovaria em digits:11 e este teste veria 422. ds_cpf já é persistido hoje, então
-        // aqui a asserção sobre o valor gravado é legítima antes da Task 8.
+        $cdPessoa = $this->criarPessoa('teste.http.cache', 'Http Cache Original');
+        $chave = $this->getContainer()->get(CachePessoa::class)->chave(TenantDeTeste::cdCliente(), $cdPessoa);
+        $redis = $this->getContainer()->get(Redis::class);
+
+        $redis->del($chave);
+
+        $primeira = $this->get("/pessoas/{$cdPessoa}", [], $this->headers());
+        $primeira->assertStatus(200);
+        $this->assertSame('Http Cache Original', $primeira->json('data.ds_nome'));
+
+        $this->assertNotEmpty($redis->get($chave));
+        $ttl = $redis->ttl($chave);
+        $this->assertGreaterThan(3500, $ttl);
+        $this->assertLessThanOrEqual(3600, $ttl);
+
+        Db::table('unim_pessoa')->where('cd_pessoa', $cdPessoa)->update(['ds_nome' => 'Http Cache Mudado No Banco']);
+
+        $segunda = $this->get("/pessoas/{$cdPessoa}", [], $this->headers());
+        $segunda->assertStatus(200);
+        $this->assertSame('Http Cache Original', $segunda->json('data.ds_nome'));
+
+        // O recorte por fields roda sobre o dado cacheado: a mesma chave serve qualquer
+        // combinação, então este pedido também vem do cache (valor antigo).
+        $recortada = $this->get("/pessoas/{$cdPessoa}?fields=ds_nome", [], $this->headers());
+        $this->assertSame(['ds_nome' => 'Http Cache Original'], $recortada->json('data'));
+    }
+
+    public function testPutInvalidaOCacheDoDetalhe()
+    {
+        $cdPessoa = $this->criarPessoa('teste.http.cacheput', 'Http Cache Put');
+
+        $this->get("/pessoas/{$cdPessoa}", [], $this->headers())->assertStatus(200);
+
+        $this->put("/pessoas/{$cdPessoa}", [
+            'ds_nome' => 'Http Cache Put Novo',
+            'ds_login' => 'teste.http.cacheput',
+            'sn_pessoa_juridica' => false,
+        ], $this->headers())->assertStatus(200);
+
+        $depois = $this->get("/pessoas/{$cdPessoa}", [], $this->headers());
+        $this->assertSame('Http Cache Put Novo', $depois->json('data.ds_nome'));
+    }
+
+    public function testPatchInvalidaOCacheDoDetalhe()
+    {
+        $cdPessoa = $this->criarPessoa('teste.http.cachepatch', 'Http Cache Patch');
+
+        $this->get("/pessoas/{$cdPessoa}", [], $this->headers())->assertStatus(200);
+
+        $this->patch("/pessoas/{$cdPessoa}", ['ds_nome' => 'Http Cache Patch Novo'], $this->headers())->assertStatus(200);
+
+        $depois = $this->get("/pessoas/{$cdPessoa}", [], $this->headers());
+        $this->assertSame('Http Cache Patch Novo', $depois->json('data.ds_nome'));
+    }
+
+    /**
+     * Sem invalidação no DELETE, a pessoa excluída continuaria respondendo 200 por até uma
+     * hora — o soft delete some do banco na hora, o cache não.
+     */
+    public function testDeleteInvalidaOCacheEODetalhePassaAResponder404()
+    {
+        $cdPessoa = $this->criarPessoa('teste.http.cachedelete', 'Http Cache Delete');
+        $chave = $this->getContainer()->get(CachePessoa::class)->chave(TenantDeTeste::cdCliente(), $cdPessoa);
+        $redis = $this->getContainer()->get(Redis::class);
+
+        $this->get("/pessoas/{$cdPessoa}", [], $this->headers())->assertStatus(200);
+        $this->assertNotEmpty($redis->get($chave));
+
+        $this->delete("/pessoas/{$cdPessoa}", [], $this->headers())->assertStatus(200);
+
+        $this->assertFalse($redis->get($chave));
+        $this->get("/pessoas/{$cdPessoa}", [], $this->headers())->assertStatus(404);
+    }
+
+    /**
+     * Cache corrompido (formato antigo, escrita manual em debug, JSON truncado) precisa cair
+     * para o banco em vez de virar resposta pela metade.
+     */
+    public function testCacheCorrompidoCaiParaOBanco()
+    {
+        $cdPessoa = $this->criarPessoa('teste.http.cachelixo', 'Http Cache Lixo');
+        $chave = $this->getContainer()->get(CachePessoa::class)->chave(TenantDeTeste::cdCliente(), $cdPessoa);
+        $redis = $this->getContainer()->get(Redis::class);
+
+        $redis->setex($chave, 3600, '{"ds_nome":"So Metade Do Registro"}');
+
+        $resposta = $this->get("/pessoas/{$cdPessoa}", [], $this->headers());
+
+        $resposta->assertStatus(200);
+        $this->assertSame('Http Cache Lixo', $resposta->json('data.ds_nome'));
+        $this->assertSame(TenantDeTeste::cdCliente(), $resposta->json('data.cd_cliente'));
+    }
+
+    private function criarPessoa(string $login, string $nome): int
+    {
         $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Mascara',
-            'ds_login' => 'teste.http.mascara',
+            'ds_nome' => $nome,
+            'ds_login' => $login,
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Mascara Oficial',
-            'ds_cpf' => '123.456.789-09',
         ], $this->headers());
 
         $criar->assertStatus(201);
-        $this->assertSame('12345678909', $criar->json('data.fisica.ds_cpf'));
-    }
 
-    public function testCpfComDigitoVerificadorInvalidoResponde422ComFrase()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste CPF',
-            'ds_login' => 'teste.http.cpfruim',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste CPF Oficial',
-            'ds_cpf' => '12345678900',
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $mensagem = $resposta->json('errors.ds_cpf')[0];
-
-        // Frase exata, não só "não é a chave crua": um assertStringNotContainsString
-        // teria passado com ":attribute" sem substituir -- foi exatamente o bug que essa
-        // asserção fraca deixou passar antes (ver task-7-report.md, "Desvio 2b").
-        $this->assertSame('The ds cpf is not a valid CPF.', $mensagem);
-    }
-
-    public function testCnpjComDigitoVerificadorInvalidoResponde422ComFrase()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste CNPJ',
-            'ds_login' => 'teste.http.cnpjruim',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => true,
-            // Dígito verificador não fecha (o CNPJ válido usado no resto da suíte termina
-            // em ...0191). O CNPJ ruim aqui só existe para provar o after() do validador.
-            'ds_cnpj' => '00000000000192',
-            'ds_nome_fantasia' => 'Http Teste CNPJ Fantasia',
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $mensagem = $resposta->json('errors.ds_cnpj')[0];
-
-        $this->assertSame('The ds cnpj is not a valid CNPJ.', $mensagem);
-    }
-
-    /**
-     * Critical 1 da revisão da Task 7: Hyperf\Validation\Concerns\ValidatesAttributes::
-     * validateDigits() faz `(string) $value` ANTES de medir, então um inteiro sem aspas no
-     * JSON ("ds_cpf": 12345678900) passa em digits:11 mesmo sem ser string. O trait de DV
-     * então guardava com is_string($cpf), que é falso pra um inteiro -- a checagem de
-     * dígito verificador era pulada inteira e a pessoa era criada com CPF inválido.
-     *
-     * Este teste tem de falhar se a guarda em ValidaDocumentosDePessoa voltar a ser
-     * is_string() -- ver mutation evidence no relatório da tarefa.
-     */
-    public function testCpfNumericoNoJsonNaoEscapaDoDigitoVerificador()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste CPF Numerico',
-            'ds_login' => 'teste.http.cpfnumerico',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste CPF Numerico Oficial',
-            'ds_cpf' => 12345678900,
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $this->assertArrayHasKey('ds_cpf', $resposta->json('errors'));
-    }
-
-    /**
-     * Mesmo bug do teste acima, lado CNPJ.
-     */
-    public function testCnpjNumericoNoJsonNaoEscapaDoDigitoVerificador()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste CNPJ Numerico',
-            'ds_login' => 'teste.http.cnpjnumerico',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => true,
-            'ds_cnpj' => 12345678901234,
-            'ds_nome_fantasia' => 'Http Teste CNPJ Numerico Fantasia',
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $this->assertArrayHasKey('ds_cnpj', $resposta->json('errors'));
-    }
-
-    /**
-     * Important 3 da revisão: string vazia só vira null nos dez campos novos de física
-     * (mais ds_sexo, que já é um deles) -- não nos campos pré-existentes. ds_cnpj não tem
-     * `nullable` na regra, então se a normalização convertesse "" para null aqui, o
-     * digits:14 passaria a rodar contra null e reprovar uma pessoa física que nunca
-     * deveria ter sido obrigada a informar CNPJ.
-     */
-    public function testCnpjVazioEmPessoaFisicaContinuaAceitoAposNormalizacao()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Cnpj Vazio',
-            'ds_login' => 'teste.http.cnpjvazio',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Cnpj Vazio Oficial',
-            'ds_cnpj' => '',
-        ], $this->headers());
-
-        $resposta->assertStatus(201);
-    }
-
-    /**
-     * Contraponto do teste acima: em pessoa JURÍDICA, ds_cnpj vazio continua reprovado,
-     * porque ds_cnpj não entrou em CAMPOS_VAZIO_VIRA_NULO (Critical 2 da revisão final) --
-     * required_if precisa VER a string vazia para reprovar corretamente uma pessoa jurídica
-     * sem CNPJ. Se alguém um dia adicionar ds_cnpj à lista por engano, este teste vira 201
-     * onde deveria ser 422.
-     */
-    public function testDsCnpjVazioEmPessoaJuridicaContinuaReprovadoCom422()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Cnpj Vazio Juridica',
-            'ds_login' => 'teste.http.cnpjvaziojuridica',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => true,
-            'ds_cnpj' => '',
-            'ds_nome_fantasia' => 'Http Teste Cnpj Vazio Juridica Fantasia',
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $this->assertArrayHasKey('ds_cnpj', $resposta->json('errors'));
-    }
-
-    /**
-     * Critical 2 da revisão final, metade comportamental: ds_cpf entrou em
-     * CAMPOS_VAZIO_VIRA_NULO -- string vazia enviada precisa gravar null (não ''), o mesmo
-     * contrato dos dez campos novos de física.
-     */
-    public function testDsCpfVazioViraNullAoGravar()
-    {
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Cpf Vazio Vira Null',
-            'ds_login' => 'teste.http.cpfvazionull',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Cpf Vazio Vira Null Oficial',
-            'ds_cpf' => '',
-        ], $this->headers());
-
-        $criar->assertStatus(201);
-        $this->assertNull($criar->json('data.fisica.ds_cpf'));
-
-        $linha = Db::table('unim_pessoa_fisica')->where('cd_pessoa', $criar->json('data.cd_pessoa'))->first();
-        $this->assertNull($linha->ds_cpf);
-    }
-
-    /**
-     * Critical 2 da revisão final: "abc" não é vazio e não é dígito nenhum -- tem de
-     * continuar "abc" depois da normalização e reprovar a regra de formato com 422, não ser
-     * silenciosamente esvaziado para "" (que, por ds_cpf estar em CAMPOS_VAZIO_VIRA_NULO,
-     * viraria null e passaria batido).
-     */
-    public function testDsCpfComLixoNaoNumericoResponde422()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Cpf Lixo',
-            'ds_login' => 'teste.http.cpflixo',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Cpf Lixo Oficial',
-            'ds_cpf' => 'abc',
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $this->assertArrayHasKey('ds_cpf', $resposta->json('errors'));
-    }
-
-    /**
-     * Critical 1 da revisão final: `digits:11` chamava `(string) $value` sem guarda dentro
-     * de Hyperf\Validation\Concerns\ValidatesAttributes::validateDigits() -- um array como
-     * valor ("ds_cpf": []) disparava um E_WARNING de conversão de array para string, que
-     * ErrorExceptionHandler transformava em 500. A regra trocou para `regex`, que guarda com
-     * is_string()/is_numeric() e reprova (422) em vez de espatifar.
-     *
-     * Verificado por mutação: trocar `regex:/^\d{11}$/` de volta para `digits:11` em
-     * CreatePessoaRequest faz este teste falhar com 500 em vez de 422 (ver relatório final).
-     */
-    public function testDsCpfComArrayRetorna422NaoMais500()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Cpf Array',
-            'ds_login' => 'teste.http.cpfarray',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Cpf Array Oficial',
-            'ds_cpf' => [],
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $this->assertArrayHasKey('ds_cpf', $resposta->json('errors'));
-    }
-
-    /**
-     * Mesmo bug do teste acima, lado CNPJ -- mas em pessoa FÍSICA de propósito, não
-     * jurídica. Em pessoa jurídica (sn_pessoa_juridica=true), um ds_cnpj=[] falha
-     * `required_if` por estar "vazio" (Validator::shouldStopValidating() trata array vazio
-     * como falha da regra implícita e PULA as regras seguintes do mesmo atributo) -- a
-     * regra de formato (digits/regex) nunca chega a rodar, e o teste passaria com 422 nos
-     * dois regimes, sem provar nada sobre a troca de digits para regex. Em pessoa física,
-     * `required_if` não se aplica (condição falsa, sempre "passa"), então a regra de
-     * formato roda de verdade contra o array -- é aqui que digits:14 quebrava com 500.
-     */
-    public function testDsCnpjComArrayEmPessoaFisicaRetorna422NaoMais500()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Cnpj Array',
-            'ds_login' => 'teste.http.cnpjarray',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Cnpj Array Oficial',
-            'ds_cnpj' => [],
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $this->assertArrayHasKey('ds_cnpj', $resposta->json('errors'));
-    }
-
-    /**
-     * Important 4 da revisão: os seis testes anteriores só batem em POST. Este cobre PATCH
-     * com uma das dez regras novas E o trait de DV, pra não deixar PUT/PATCH sem nenhuma
-     * cobertura própria.
-     */
-    public function testPatchComCpfDigitoVerificadorInvalidoResponde422()
-    {
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Patch CPF Ruim',
-            'ds_login' => 'teste.http.patchcpfruim',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Patch CPF Ruim Oficial',
-        ], $this->headers());
-
-        $cdPessoa = $criar->json('data.cd_pessoa');
-
-        $patch = $this->patch("/pessoas/{$cdPessoa}", [
-            'ds_cpf' => '12345678900',
-        ], $this->headers());
-
-        $patch->assertStatus(422);
-        $this->assertArrayHasKey('ds_cpf', $patch->json('errors'));
-    }
-
-    public function testSexoForaDoDominioResponde422()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Sexo',
-            'ds_login' => 'teste.http.sexoruim',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Sexo Oficial',
-            'ds_sexo' => 'x',
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $this->assertArrayHasKey('ds_sexo', $resposta->json('errors'));
-    }
-
-    public function testEstadoCivilInexistenteResponde422ENao409()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Estado Civil',
-            'ds_login' => 'teste.http.estadocivil',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Estado Civil Oficial',
-            'cd_estado_civil' => 999999,
-        ], $this->headers());
-
-        // Sem a regra exists, a FK viraria SQLSTATE 23000 e o DatabaseExceptionHandler
-        // devolveria 409 -- o mesmo status de "login ja existe", mandando quem investiga
-        // para o lado errado.
-        $resposta->assertStatus(422);
-        $this->assertArrayHasKey('cd_estado_civil', $resposta->json('errors'));
-    }
-
-    public function testExpedicaoAnteriorAoNascimentoResponde422()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Datas',
-            'ds_login' => 'teste.http.datas',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Datas Oficial',
-            'dt_nascimento' => '1990-05-12',
-            'dt_identidade_expedicao' => '1985-01-01',
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $this->assertArrayHasKey('dt_identidade_expedicao', $resposta->json('errors'));
-    }
-
-    public function testNascimentoNoFuturoResponde422()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Futuro',
-            'ds_login' => 'teste.http.futuro',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Futuro Oficial',
-            'dt_nascimento' => '2099-01-01',
-        ], $this->headers());
-
-        $resposta->assertStatus(422);
-        $this->assertArrayHasKey('dt_nascimento', $resposta->json('errors'));
-    }
-
-    /**
-     * Critical da revisão da Task 9: `after_or_equal:dt_nascimento` na STRING de regras
-     * comparava contra o valor literal "dt_nascimento" quando o campo não vinha no
-     * payload -- isso não é uma data, então a comparação reprovava por não conseguir
-     * fazer parse, e um PATCH que só manda dt_identidade_expedicao tomava 422 sem
-     * nenhuma data estar de fato invertida. A checagem migrou para o after() do
-     * validador (ValidaDatasDePessoa) e só compara quando as DUAS datas vêm no mesmo
-     * payload.
-     */
-    public function testPatchComSoDtIdentidadeExpedicaoNaoExigeDtNascimento()
-    {
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Patch Data Isolada',
-            'ds_login' => 'teste.http.patchdataisolada',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Patch Data Isolada Oficial',
-        ], $this->headers());
-
-        $criar->assertStatus(201);
-        $cdPessoa = $criar->json('data.cd_pessoa');
-
-        $patch = $this->patch("/pessoas/{$cdPessoa}", [
-            'dt_identidade_expedicao' => '2015-03-01',
-        ], $this->headers());
-
-        $patch->assertStatus(200);
-        $this->assertSame('2015-03-01', $patch->json('data.fisica.dt_identidade_expedicao'));
-    }
-
-    /**
-     * Mesmo cenário do Critical, mas via POST: alguém com data de expedição de RG
-     * conhecida e data de nascimento desconhecida precisa conseguir cadastrar a
-     * primeira sem a segunda.
-     */
-    public function testCriaComSoDtIdentidadeExpedicaoNaoExigeDtNascimento()
-    {
-        $resposta = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Post Data Isolada',
-            'ds_login' => 'teste.http.postdataisolada',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Post Data Isolada Oficial',
-            'dt_identidade_expedicao' => '2015-03-01',
-        ], $this->headers());
-
-        $resposta->assertStatus(201);
-        $this->assertSame('2015-03-01', $resposta->json('data.fisica.dt_identidade_expedicao'));
-    }
-
-    public function testCriaPessoaFisicaComOsDezCamposNovos()
-    {
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Completa',
-            'ds_login' => 'teste.http.completa',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Completa Oficial',
-            'ds_nome_social' => 'Completa',
-            'ds_nome_mae' => 'Mae Completa',
-            'ds_nome_pai' => 'Pai Completa',
-            'ds_cpf' => '52998224725',
-            'ds_identidade' => '123456789',
-            'ds_orgao_estado' => 'SP',
-            'ds_identidade_orgao_exp' => 'SSP',
-            'dt_identidade_expedicao' => '2015-03-01',
-            'dt_nascimento' => '1990-05-12',
-            'ds_sexo' => 'f',
-            'cd_estado_civil' => $this->cdEstadoCivil(),
-        ], $this->headers());
-
-        $criar->assertStatus(201);
-        $cdPessoa = $criar->json('data.cd_pessoa');
-
-        $detalhe = $this->get("/pessoas/{$cdPessoa}", ['fields' => 'fisica.*'], $this->headers());
-        $detalhe->assertStatus(200);
-        $fisica = $detalhe->json('data.fisica');
-
-        $this->assertSame('Completa', $fisica['ds_nome_social']);
-        $this->assertSame('Mae Completa', $fisica['ds_nome_mae']);
-        $this->assertSame('Pai Completa', $fisica['ds_nome_pai']);
-        $this->assertSame('52998224725', $fisica['ds_cpf']);
-        $this->assertSame('123456789', $fisica['ds_identidade']);
-        $this->assertSame('SP', $fisica['ds_orgao_estado']);
-        $this->assertSame('SSP', $fisica['ds_identidade_orgao_exp']);
-        $this->assertSame('2015-03-01', $fisica['dt_identidade_expedicao']);
-        $this->assertSame('1990-05-12', $fisica['dt_nascimento']);
-        $this->assertSame('f', $fisica['ds_sexo']);
-        $this->assertSame($this->cdEstadoCivil(), $fisica['cd_estado_civil']);
-    }
-
-    public function testNormalizaSexoEStringVaziaAoGravar()
-    {
-        // Fecha o par que a Task 7 deixou pela metade: a normalização roda em
-        // validationData(), mas só aqui os campos chegam ao banco e podem ser observados.
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Normaliza',
-            'ds_login' => 'teste.http.normaliza',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Normaliza Oficial',
-            'ds_sexo' => 'F',
-            'ds_nome_social' => '',
-        ], $this->headers());
-
-        $criar->assertStatus(201);
-        $this->assertSame('f', $criar->json('data.fisica.ds_sexo'));
-        $this->assertNull($criar->json('data.fisica.ds_nome_social'));
-    }
-
-    public function testPatchAtualizaCampoNovoDeFisica()
-    {
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Patch Fisica',
-            'ds_login' => 'teste.http.patchfisica',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Http Teste Patch Fisica Oficial',
-        ], $this->headers());
-
-        $criar->assertStatus(201);
-        $cdPessoa = $criar->json('data.cd_pessoa');
-
-        $patch = $this->patch("/pessoas/{$cdPessoa}", ['ds_nome_social' => 'Patchado'], $this->headers());
-        $patch->assertStatus(200);
-        $this->assertSame('Patchado', $patch->json('data.fisica.ds_nome_social'));
-    }
-
-    public function testPatchComCampoDeFisicaEmPessoaJuridicaNaoCriaLinhaFisica()
-    {
-        // Finding 14: PATCH nunca troca o tipo pessoa, e campo do tipo que a pessoa NÃO é
-        // tem de ser ignorado em silêncio. Com dez campos a mais, dez portas a mais.
-        $criar = $this->json('/pessoas', [
-            'ds_nome' => 'Http Teste Juridica Patch',
-            'ds_login' => 'teste.http.juridicapatch',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => true,
-            'ds_cnpj' => '00000000000191',
-            'ds_nome_fantasia' => 'Http Teste Fantasia',
-        ], $this->headers());
-
-        $criar->assertStatus(201);
-        $cdPessoa = $criar->json('data.cd_pessoa');
-
-        $patch = $this->patch("/pessoas/{$cdPessoa}", [
-            'ds_nome_mae' => 'Nao Deve Gravar',
-            'ds_sexo' => 'f',
-        ], $this->headers());
-
-        $patch->assertStatus(200);
-        $this->assertSame(
-            0,
-            Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->count()
-        );
-    }
-
-    private function cdEstadoCivil(): int
-    {
-        return (int) Db::table('saas_estado_civil')->min('cd_estado_civil');
+        return (int) $criar->json('data.cd_pessoa');
     }
 
     private function headers(): array

@@ -14,8 +14,10 @@ namespace HyperfTest\Cases\Service\Pessoa;
 
 use App\Exception\Pessoa\LoginJaExisteException;
 use App\Exception\Pessoa\PessoaNaoEncontradaException;
+use App\Service\Pessoa\CachePessoa;
 use App\Service\Pessoa\PessoaService;
 use Hyperf\DbConnection\Db;
+use Hyperf\Redis\Redis;
 use Hyperf\Testing\TestCase;
 use HyperfTest\Support\TenantDeTeste;
 
@@ -31,14 +33,19 @@ class PessoaServiceTest extends TestCase
             ->where('ds_login', 'like', 'teste.service.%')
             ->pluck('cd_pessoa');
 
-        Db::table('unim_pessoa_fisica')->whereIn('cd_pessoa', $cdPessoas)->delete();
-        Db::table('unim_pessoa_juridica')->whereIn('cd_pessoa', $cdPessoas)->delete();
+        $redis = $this->getContainer()->get(Redis::class);
+        $cache = $this->getContainer()->get(CachePessoa::class);
+
+        foreach ($cdPessoas as $cdPessoa) {
+            $redis->del($cache->chave(TenantDeTeste::cdCliente(), (int) $cdPessoa));
+        }
+
         Db::table('unim_pessoa')->where('ds_login', 'like', 'teste.service.%')->delete();
 
         parent::tearDown();
     }
 
-    public function testCriarPessoaFisicaComSucesso()
+    public function testCriarPessoaComSucesso()
     {
         $service = $this->getContainer()->get(PessoaService::class);
 
@@ -47,11 +54,71 @@ class PessoaServiceTest extends TestCase
             'ds_login' => 'teste.service.criar',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Service Teste Oficial',
         ]);
 
         $this->assertNotNull($pessoa->cd_pessoa);
         $this->assertTrue(password_verify('123456', $pessoa->ds_senha));
+    }
+
+    /**
+     * A escrita de pessoa não toca as tabelas dos outros recursos. Antes, criar uma pessoa
+     * física inseria a linha filha junto — e trocar o tipo apagava a antiga.
+     */
+    public function testCriarNaoEscreveNasTabelasDeOutroRecurso()
+    {
+        $service = $this->getContainer()->get(PessoaService::class);
+
+        $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
+            'ds_nome' => 'Service Sem Filho',
+            'ds_login' => 'teste.service.semfilho',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+        ]);
+
+        $this->assertSame(0, Db::table('unim_pessoa_fisica')->where('cd_pessoa', $pessoa->cd_pessoa)->count());
+        $this->assertSame(0, Db::table('unim_pessoa_juridica')->where('cd_pessoa', $pessoa->cd_pessoa)->count());
+    }
+
+    /**
+     * Regressão que a versão anterior desta API tinha de tratar com um sinal especial
+     * (ehIsentoDeFisicaJuridica, para os logins admin/administrador): um PUT apagava linha
+     * de unim_pessoa_fisica que existisse por dado legado. Agora nenhuma escrita de pessoa
+     * apaga linha de outro recurso, para login nenhum — a regra especial deixou de existir e
+     * este teste guarda o comportamento por qualquer login.
+     */
+    public function testAtualizarNaoApagaLinhaDeOutroRecurso()
+    {
+        $service = $this->getContainer()->get(PessoaService::class);
+
+        $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
+            'ds_nome' => 'Service Com Fisica Legada',
+            'ds_login' => 'teste.service.fisicalegada',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+        ]);
+
+        // Simula dado de outro recurso (ou do LMS legado) já gravado para esta pessoa.
+        Db::table('unim_pessoa_fisica')->insert([
+            'cd_pessoa' => $pessoa->cd_pessoa,
+            'ds_nome_oficial' => 'Fisica De Outro Recurso',
+        ]);
+
+        try {
+            // PUT invertendo o tipo: era exatamente o caso que destruía a linha antiga.
+            $atualizada = $service->atualizar($pessoa->cd_pessoa, TenantDeTeste::cdCliente(), [
+                'ds_nome' => 'Service Com Fisica Legada Renomeado',
+                'ds_login' => 'teste.service.fisicalegada',
+                'sn_pessoa_juridica' => true,
+            ]);
+
+            $this->assertSame('Service Com Fisica Legada Renomeado', $atualizada->ds_nome);
+            $this->assertNotNull(
+                Db::table('unim_pessoa_fisica')->where('cd_pessoa', $pessoa->cd_pessoa)->first(),
+                'Escrita de pessoa NAO pode apagar linha de unim_pessoa_fisica: e dado de outro recurso.'
+            );
+        } finally {
+            Db::table('unim_pessoa_fisica')->where('cd_pessoa', $pessoa->cd_pessoa)->delete();
+        }
     }
 
     public function testCriarComLoginDuplicadoLancaExcecao()
@@ -63,7 +130,6 @@ class PessoaServiceTest extends TestCase
             'ds_login' => 'teste.service.duplicado',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Duplicado 1',
         ]);
 
         $this->expectException(LoginJaExisteException::class);
@@ -73,115 +139,7 @@ class PessoaServiceTest extends TestCase
             'ds_login' => 'teste.service.duplicado',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Duplicado 2',
         ]);
-    }
-
-    /**
-     * A isenção de fisica/juridica (spec: docs/superpowers/specs/2026-07-25-migracao-
-     * cadastro-pessoa-design.md:104) exige o login EXATO 'admin' ou 'administrador'
-     * (fiel ao legado — comparacao por igualdade, nao prefixo). Por isso este teste
-     * nao pode usar o prefixo 'teste.service.%' dos demais (nao seria mais "admin"
-     * apos o prefixo). Como a base usada aqui e' real (mysql_84/lms2), o teste
-     * confere antes que nao existe conta 'administrador' de verdade para cd_cliente=1
-     * e remove explicitamente o registro criado ao final, em vez de depender do
-     * tearDown() generico.
-     */
-    public function testCriarComLoginAdminNaoExigeFisicaOuJuridica()
-    {
-        $service = $this->getContainer()->get(PessoaService::class);
-
-        $existeContaReal = Db::table('unim_pessoa')
-            ->where('cd_cliente', TenantDeTeste::cdCliente())
-            ->where('ds_login', 'administrador')
-            ->exists();
-
-        if ($existeContaReal) {
-            $this->markTestSkipped('Ja existe uma conta "administrador" real para cd_cliente=1 nesta base; teste evitado para nao conflitar com dado real.');
-        }
-
-        $cdPessoa = null;
-
-        try {
-            $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
-                'ds_nome' => 'Administrador Teste',
-                'ds_login' => 'administrador',
-                'ds_senha' => '123456',
-                'sn_pessoa_juridica' => false,
-            ]);
-            $cdPessoa = $pessoa->cd_pessoa;
-
-            $this->assertNotNull($pessoa->cd_pessoa);
-            $this->assertNull($pessoa->fisica);
-        } finally {
-            if ($cdPessoa !== null) {
-                Db::table('unim_pessoa')->where('cd_pessoa', $cdPessoa)->delete();
-            }
-        }
-    }
-
-    /**
-     * Regressão encontrada em re-review pós-fix do Critical 1 (PUT trocando tipo pessoa):
-     * o delete de filho órfão que consertou o Critical 1 rodava sempre que
-     * $dadosFisica/$dadosJuridica vinham null, mas pessoas ISENTAS (login
-     * admin/administrador) SEMPRE mandam os dois null -- não é "tipo mudou", é a regra de
-     * negócio de sempre. Sem o guard, um PUT válido nessas pessoas apagava qualquer
-     * fisica/juridica que existisse por dado legado (reproduzido de verdade contra
-     * cd_pessoa=1/2, cd_cliente=23 -- não tocados por este teste, que usa cd_cliente=1 e
-     * confere antes que não existe conta real, mesmo padrão de
-     * testCriarComLoginAdminNaoExigeFisicaOuJuridica acima).
-     *
-     * Como o fluxo normal da aplicação NUNCA cria fisica/juridica pra pessoa isenta, a
-     * única forma de ter esse cenário é simulando o dado legado: insere a linha órfã
-     * direto no banco depois de criar a pessoa isenta.
-     */
-    public function testAtualizarPessoaAdminComFisicaOrfaDeDadoLegadoNaoApagaAFisica()
-    {
-        $service = $this->getContainer()->get(PessoaService::class);
-
-        $existeContaReal = Db::table('unim_pessoa')
-            ->where('cd_cliente', TenantDeTeste::cdCliente())
-            ->where('ds_login', 'administrador')
-            ->exists();
-
-        if ($existeContaReal) {
-            $this->markTestSkipped('Ja existe uma conta "administrador" real para cd_cliente=1 nesta base; teste evitado para nao conflitar com dado real.');
-        }
-
-        $cdPessoa = null;
-
-        try {
-            $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
-                'ds_nome' => 'Administrador Com Fisica Orfa',
-                'ds_login' => 'administrador',
-                'ds_senha' => '123456',
-                'sn_pessoa_juridica' => false,
-            ]);
-            $cdPessoa = $pessoa->cd_pessoa;
-            $this->assertNull($pessoa->fisica);
-
-            // Simula dado legado: linha órfã em unim_pessoa_fisica pra uma pessoa isenta.
-            Db::table('unim_pessoa_fisica')->insert([
-                'cd_pessoa' => $cdPessoa,
-                'ds_nome_oficial' => 'Fisica Orfa De Dado Legado',
-            ]);
-
-            $atualizada = $service->atualizar($cdPessoa, TenantDeTeste::cdCliente(), [
-                'ds_nome' => 'Administrador Com Fisica Orfa Renomeado',
-                'ds_login' => 'administrador',
-                'sn_pessoa_juridica' => false,
-            ]);
-
-            $this->assertSame('Administrador Com Fisica Orfa Renomeado', $atualizada->ds_nome);
-
-            $linhaFisica = Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->first();
-            $this->assertNotNull($linhaFisica, 'PUT valido numa pessoa isenta NAO pode apagar fisica orfa de dado legado.');
-        } finally {
-            if ($cdPessoa !== null) {
-                Db::table('unim_pessoa_fisica')->where('cd_pessoa', $cdPessoa)->delete();
-                Db::table('unim_pessoa')->where('cd_pessoa', $cdPessoa)->delete();
-            }
-        }
     }
 
     public function testAtualizarSemSenhaMantemSenhaAtual()
@@ -193,7 +151,6 @@ class PessoaServiceTest extends TestCase
             'ds_login' => 'teste.service.mantemsenha',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Mantem Senha',
         ]);
         $hashOriginal = $pessoa->ds_senha;
 
@@ -201,45 +158,22 @@ class PessoaServiceTest extends TestCase
             'ds_nome' => 'Mantem Senha Renomeado',
             'ds_login' => 'teste.service.mantemsenha',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Mantem Senha',
         ]);
 
         $this->assertSame($hashOriginal, $atualizada->ds_senha);
     }
 
-    public function testAtualizarParcialIgnoraCampoDoTipoQuePessoaNaoE()
-    {
-        // Finding 14 (whole-branch review): atualizarParcial() montava dadosJuridica sem
-        // checar o sn_pessoa_juridica REAL da pessoa -- um PATCH com ds_cnpj numa pessoa
-        // física criava uma linha jurídica pra ela (mesmo bug de integridade do Critical
-        // 1, por outra porta, só que via PATCH em vez de PUT).
-        $service = $this->getContainer()->get(PessoaService::class);
-
-        $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
-            'ds_nome' => 'Patch Tipo Errado',
-            'ds_login' => 'teste.service.patchtipoerrado',
-            'ds_senha' => '123456',
-            'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Patch Tipo Errado',
-        ]);
-
-        $atualizada = $service->atualizarParcial($pessoa->cd_pessoa, TenantDeTeste::cdCliente(), [
-            'ds_cnpj' => '00000000000191',
-            'ds_nome_fantasia' => 'Nao Deveria Existir',
-        ]);
-
-        $this->assertNull($atualizada->juridica);
-
-        $linhaJuridica = Db::table('unim_pessoa_juridica')->where('cd_pessoa', $pessoa->cd_pessoa)->first();
-        $this->assertNull($linhaJuridica);
-    }
-
+    /**
+     * O 404 do PATCH vinha de uma leitura extra feita antes de gravar (para descobrir o tipo
+     * da pessoa). Essa leitura saiu junto com a escrita das tabelas filhas; quem garante o
+     * 404 agora é o WHERE com cd_cliente do próprio UPDATE.
+     */
     public function testAtualizarParcialPessoaInexistenteLancaExcecao()
     {
         $service = $this->getContainer()->get(PessoaService::class);
 
         $this->expectException(PessoaNaoEncontradaException::class);
-        $service->atualizarParcial(999999, 1, ['ds_nome' => 'Nao Existe']);
+        $service->atualizarParcial(999999, TenantDeTeste::cdCliente(), ['ds_nome' => 'Nao Existe']);
     }
 
     public function testBuscarPessoaInexistenteLancaExcecao()
@@ -248,5 +182,66 @@ class PessoaServiceTest extends TestCase
 
         $this->expectException(PessoaNaoEncontradaException::class);
         $service->buscar(999999, TenantDeTeste::cdCliente());
+    }
+
+    /**
+     * O ganho do cache é não repetir a consulta. A prova é alterar a linha direto no banco
+     * (o Service não vê isso passar) e continuar recebendo o valor antigo.
+     */
+    public function testBuscarUsaCacheNaSegundaChamada()
+    {
+        $service = $this->getContainer()->get(PessoaService::class);
+        $cache = $this->getContainer()->get(CachePessoa::class);
+        $redis = $this->getContainer()->get(Redis::class);
+
+        $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
+            'ds_nome' => 'Service Cache',
+            'ds_login' => 'teste.service.cache',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+        ]);
+
+        $chave = $cache->chave(TenantDeTeste::cdCliente(), (int) $pessoa->cd_pessoa);
+        $redis->del($chave);
+
+        $service->buscar((int) $pessoa->cd_pessoa, TenantDeTeste::cdCliente());
+        $this->assertNotEmpty($redis->get($chave), 'A primeira leitura precisa gravar o cache.');
+        $this->assertSame(CachePessoa::TTL_SEGUNDOS, $redis->ttl($chave));
+
+        Db::table('unim_pessoa')->where('cd_pessoa', $pessoa->cd_pessoa)->update(['ds_nome' => 'Mudado Direto No Banco']);
+
+        $doCache = $service->buscar((int) $pessoa->cd_pessoa, TenantDeTeste::cdCliente());
+        $this->assertSame('Service Cache', $doCache->ds_nome);
+
+        // E a invalidação: depois de uma escrita pela API, a leitura volta ao banco.
+        $service->atualizarParcial((int) $pessoa->cd_pessoa, TenantDeTeste::cdCliente(), ['ds_nome' => 'Service Cache Novo']);
+
+        $this->assertSame('Service Cache Novo', $service->buscar((int) $pessoa->cd_pessoa, TenantDeTeste::cdCliente())->ds_nome);
+    }
+
+    /**
+     * ds_senha não está no mapa de campos, então não pode chegar ao Redis — o hash bcrypt
+     * ficaria legível para quem tem acesso ao cache.
+     */
+    public function testCacheNaoGuardaSenha()
+    {
+        $service = $this->getContainer()->get(PessoaService::class);
+        $cache = $this->getContainer()->get(CachePessoa::class);
+        $redis = $this->getContainer()->get(Redis::class);
+
+        $pessoa = $service->criar(TenantDeTeste::cdCliente(), [
+            'ds_nome' => 'Service Cache Senha',
+            'ds_login' => 'teste.service.cachesenha',
+            'ds_senha' => '123456',
+            'sn_pessoa_juridica' => false,
+        ]);
+
+        $service->buscar((int) $pessoa->cd_pessoa, TenantDeTeste::cdCliente());
+
+        $cacheado = $redis->get($cache->chave(TenantDeTeste::cdCliente(), (int) $pessoa->cd_pessoa));
+
+        $this->assertIsString($cacheado);
+        $this->assertStringNotContainsString('ds_senha', $cacheado);
+        $this->assertStringNotContainsString('$2y$', $cacheado);
     }
 }

@@ -16,37 +16,27 @@ use App\Model\Pessoa\UnimPessoa;
 use App\Support\Campos\SelecaoDeCampos;
 use Hyperf\Database\Model\Collection;
 
+/**
+ * Este repositório fala com unim_pessoa e só. unim_pessoa_fisica e unim_pessoa_juridica
+ * saíram daqui: cada recurso responde pela própria tabela.
+ */
 interface PessoaRepositoryInterface
 {
     /**
      * @param array<string, mixed> $dadosPessoa
-     * @param null|array<string, mixed> $dadosFisica
-     * @param null|array<string, mixed> $dadosJuridica
      */
-    public function criar(array $dadosPessoa, ?array $dadosFisica, ?array $dadosJuridica): UnimPessoa;
+    public function criar(array $dadosPessoa): UnimPessoa;
 
     /**
      * @param array<string, mixed> $dadosPessoa
-     * @param null|array<string, mixed> $dadosFisica
-     * @param null|array<string, mixed> $dadosJuridica
-     * @param bool $ehIsentoDeFisicaJuridica login admin/administrador nunca tem
-     *                                       fisica/juridica de propósito (regra de negócio, não "tipo que mudou") — quando
-     *                                       true, o Repository nunca apaga fisica/juridica desta pessoa, independente do que
-     *                                       vier em $dadosFisica/$dadosJuridica
      */
-    public function atualizar(
-        int $cdPessoa,
-        int $cdCliente,
-        array $dadosPessoa,
-        ?array $dadosFisica,
-        ?array $dadosJuridica,
-        bool $ehIsentoDeFisicaJuridica = false
-    ): UnimPessoa;
+    public function atualizar(int $cdPessoa, int $cdCliente, array $dadosPessoa): UnimPessoa;
 
     /**
-     * @param null|SelecaoDeCampos $selecao null significa contrato completo
+     * Traz SEMPRE todas as colunas do mapa (MapaDeCamposPessoa::colunas()), sem recorte por
+     * fields: o detalhe é cacheado por entidade e o recorte roda depois, sobre o cache.
      */
-    public function buscarPorId(int $cdPessoa, int $cdCliente, ?SelecaoDeCampos $selecao = null): ?UnimPessoa;
+    public function buscarPorId(int $cdPessoa, int $cdCliente): ?UnimPessoa;
 
     /**
      * @param array<string, mixed> $filtros

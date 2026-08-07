@@ -19,9 +19,9 @@ use Hyperf\Swagger\Annotation as OA;
  */
 #[OA\Schema(
     schema: 'PessoaResumida',
-    description: 'O que GET /pessoas devolve por padrão, sem ?fields=: apenas estes quatro campos, '
-        . 'e nenhuma relação (o que também poupa duas consultas por página). '
-        . 'Para receber mais, peça explicitamente — `?fields=*` devolve o registro completo.',
+    description: 'O que GET /pessoas devolve por padrão, sem ?fields=: apenas estes quatro campos. '
+        . 'Para receber mais, peça explicitamente — `?fields=*` devolve o registro completo, que hoje é este conjunto '
+        . 'mais cd_cliente (as propriedades fisica/juridica saíram da API de pessoa).',
     properties: [
         new OA\Property(property: 'cd_pessoa', description: 'Identificador da pessoa. É o :id de GET/PUT/PATCH/DELETE /pessoas/{id}.', type: 'integer', example: 1512099),
         new OA\Property(property: 'ds_nome', type: 'string', example: 'Ana Souza', nullable: true),

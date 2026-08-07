@@ -38,7 +38,7 @@ class CreatePessoaRequestTest extends TestCase
         $this->assertArrayHasKey('sn_pessoa_juridica', $validator->errors()->toArray());
     }
 
-    public function testPassaComCamposMinimosDePessoaFisica()
+    public function testPassaComOsQuatroCamposDePessoa()
     {
         $factory = $this->getContainer()->get(ValidatorFactoryInterface::class);
         $request = new CreatePessoaRequest($this->getContainer());
@@ -48,37 +48,43 @@ class CreatePessoaRequestTest extends TestCase
             'ds_login' => 'fulano.teste',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'Fulano de Teste Oficial',
         ], $request->rules());
 
         $this->assertFalse($validator->fails());
     }
 
     /**
-     * Important 2 + Important 4 da revisão da Task 7: ds_cpf e ds_cnpj, mais os dez
-     * campos novos de física, não podem ter uma regra de FORMATO diferente entre
-     * Create/Update/Patch -- divergência aqui é exatamente como ds_cnpj entrou numa
-     * pessoa física no Finding 14 (whole-branch review). "required"/"required_if"/
-     * "sometimes" divergem de propósito por verbo (POST exige o que PUT/PATCH não
-     * precisam reenviar); só esses prefixos são ignorados na comparação, o resto da
-     * regra (tipo, tamanho, domínio, exists) tem de bater igual nas três classes.
+     * As três classes de escrita aceitam EXATAMENTE as colunas de unim_pessoa expostas — a
+     * lista de rules() é o que a checagem de campo desconhecido usa como permitidos, então
+     * um campo de outro recurso que voltasse para cá deixaria de responder 422 sem que
+     * nenhum outro teste percebesse.
+     */
+    public function testAsTresClassesAceitamSomenteColunasDePessoa()
+    {
+        $esperado = ['ds_nome', 'ds_login', 'ds_senha', 'sn_pessoa_juridica'];
+
+        $this->assertEqualsCanonicalizing($esperado, array_keys((new CreatePessoaRequest($this->getContainer()))->rules()));
+        $this->assertEqualsCanonicalizing($esperado, array_keys((new UpdatePessoaRequest($this->getContainer()))->rules()));
+        $this->assertEqualsCanonicalizing($esperado, array_keys((new PatchPessoaRequest($this->getContainer()))->rules()));
+    }
+
+    /**
+     * Regra de FORMATO (tipo, tamanho, domínio) não pode divergir entre os verbos: foi
+     * divergência assim que deixou ds_cnpj entrar em pessoa física na versão anterior desta
+     * API. Os tokens de presença (required/nullable/sometimes/required_if) variam por verbo
+     * de propósito — POST exige o que PATCH não precisa reenviar — e por isso são os únicos
+     * ignorados na comparação.
      */
     public function testAsTresClassesTemAMesmaRegraDeFormatoParaOsCamposCompartilhados()
     {
-        $camposCompartilhados = [
-            'ds_cpf', 'ds_cnpj', 'ds_nome_social', 'ds_nome_mae', 'ds_nome_pai',
-            'ds_identidade', 'ds_orgao_estado', 'ds_identidade_orgao_exp',
-            'dt_identidade_expedicao', 'dt_nascimento', 'ds_sexo', 'cd_estado_civil',
-        ];
-
         $regrasCreate = (new CreatePessoaRequest($this->getContainer()))->rules();
         $regrasUpdate = (new UpdatePessoaRequest($this->getContainer()))->rules();
         $regrasPatch = (new PatchPessoaRequest($this->getContainer()))->rules();
 
-        foreach ($camposCompartilhados as $campo) {
-            $create = $this->semPrefixosDeVerbo((string) $regrasCreate[$campo]);
-            $update = $this->semPrefixosDeVerbo((string) $regrasUpdate[$campo]);
-            $patch = $this->semPrefixosDeVerbo((string) $regrasPatch[$campo]);
+        foreach (['ds_nome', 'ds_login', 'ds_senha', 'sn_pessoa_juridica'] as $campo) {
+            $create = $this->somenteFormato((string) $regrasCreate[$campo]);
+            $update = $this->somenteFormato((string) $regrasUpdate[$campo]);
+            $patch = $this->somenteFormato((string) $regrasPatch[$campo]);
 
             $this->assertSame($create, $update, "Campo '{$campo}' diverge entre Create e Update.");
             $this->assertSame($create, $patch, "Campo '{$campo}' diverge entre Create e Patch.");
@@ -86,14 +92,16 @@ class CreatePessoaRequestTest extends TestCase
     }
 
     /**
-     * Remove só os tokens que legitimamente variam por verbo ("sometimes" do PATCH,
-     * "required_if:..." do POST/PUT), preservando a ordem dos demais.
+     * Remove só os tokens de presença, que legitimamente variam por verbo, preservando a
+     * ordem dos demais.
      */
-    private function semPrefixosDeVerbo(string $regra): string
+    private function somenteFormato(string $regra): string
     {
+        $presenca = ['required', 'nullable', 'sometimes'];
+
         $tokens = array_filter(
             explode('|', $regra),
-            static fn (string $token): bool => $token !== 'sometimes' && ! str_starts_with($token, 'required_if:')
+            static fn (string $token): bool => ! in_array($token, $presenca, true) && ! str_starts_with($token, 'required_if:')
         );
 
         return implode('|', $tokens);

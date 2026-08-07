@@ -93,7 +93,6 @@ class EndToEndFlowTest extends TestCase
             'ds_login' => 'teste.e2e.criada',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'E2E Pessoa Criada Oficial',
         ], $headers);
 
         $criar->assertStatus(201);
@@ -149,7 +148,6 @@ class EndToEndFlowTest extends TestCase
             'ds_login' => 'teste.e2e.isolamento',
             'ds_senha' => '123456',
             'sn_pessoa_juridica' => false,
-            'ds_nome_oficial' => 'E2E Isolamento Cliente Um',
         ], ['Authorization' => "Bearer {$tokenClienteUm}"]);
 
         $criar->assertStatus(201);

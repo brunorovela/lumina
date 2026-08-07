@@ -128,13 +128,22 @@ Standard Hyperf skeleton wiring — most "framework" behavior lives in vendor pa
 
 ## Sparse fieldsets (`?fields=`)
 
-`GET /pessoas` and `GET /pessoas/{id}` accept `fields` (comma-separated, dot for relations, `fisica.*` and `*` wildcards). The selection reaches the SQL: partial `SELECT` plus conditional eager load.
+`GET /pessoas` and `GET /pessoas/{id}` accept `fields` (comma-separated, `*` wildcard).
 
 - **`App\Resource\Pessoa\MapaDeCamposPessoa` is the single source of truth** for what the API exposes. A column absent from the map is unreachable — that is why there is no blacklist and why `ds_senha` can never be selected.
-- Defaults differ **on purpose**: the list returns a lean set, the item returns everything, writes ignore `fields`. Documented in the Swagger of both read endpoints.
-- Adding a field is **nine** edits, not three: the map; `App\Swagger\PessoaSchema` (and `PessoaResumidaSchema` if it belongs in the lean default); the `#[OA\Parameter(name: 'fields')]` description in both read endpoints; the `requestBody` property list in all three write verbs (`criar`/`atualizar`/`atualizarParcial`) in `PessoaController`; `rules()` in all three request classes (`Create`/`Update`/`PatchPessoaRequest`); `App\Service\Pessoa\PessoaService::CAMPOS_FISICA` (forgetting this one is **silent** — the field validates, returns 201, and is never written); `App\Request\Pessoa\Concerns\NormalizaCamposDePessoa::CAMPOS_VAZIO_VIRA_NULO`, if the field shares the empty-string-becomes-null contract; `App\Model\Pessoa\UnimPessoaFisica`'s `$fillable`/`$casts`; and the shared-field list in `CreatePessoaRequestTest`. PHP attributes require constant expressions, so none of that can be derived from the map. Then `gen:swagger` — see regra 1.
-- The `select` inside an eager load **must** carry the foreign key. Without it Eloquent cannot match child to parent and returns the relation as `null` with no error. `SelecaoDeCampos::relacoes()` injects it; `PessoaRepositoryTest::testEagerLoadParcialTrazAFkEPortantoCasaPaiEFilho` guards it.
-- `PessoaResource` checks `relationLoaded()` before touching a relation. Touching an unloaded one triggers lazy load — one query per row (N+1).
+- **The map holds only `unim_pessoa` columns.** `fisica.*`/`juridica.*` were removed: each resource answers for its own table, so `/pessoas` neither reads nor writes `unim_pessoa_fisica`/`unim_pessoa_juridica`, and asking for one of those fields is a 422. `fields=*` therefore returns five keys.
+- Defaults differ **on purpose**: the list returns a lean set (no `cd_cliente`), the item returns everything, writes ignore `fields`. Documented in the Swagger of both read endpoints.
+- Adding a field is **six** edits, not one: the map; `App\Swagger\PessoaSchema` (and `PessoaResumidaSchema` if it belongs in the lean default); the `#[OA\Parameter(name: 'fields')]` description in both read endpoints; the `requestBody` property list in all three write verbs (`criar`/`atualizar`/`atualizarParcial`) in `PessoaController`; `rules()` in all three request classes (`Create`/`Update`/`PatchPessoaRequest`); and `App\Model\Pessoa\UnimPessoa`'s `$fillable`/`$casts` plus `App\Service\Pessoa\PessoaService::CAMPOS_PESSOA` (forgetting the last one is **silent** — the field validates, returns 201, and is never written). PHP attributes require constant expressions, so none of that can be derived from the map. Then `gen:swagger` — see regra 1.
+- `rules()` **is** the whitelist of accepted payload fields: `App\Request\Concerns\RejeitaCamposDesconhecidos` turns anything else into a 422 with the field name in `errors`. Without it, a client still sending `ds_cpf` would get 201 and lose the value silently.
+- The support layer (`App\Support\Campos\SelecaoDeCampos`/`Campo`) still knows relations and the `sensivel` flag, covered by its own unit test, even though no pessoa field uses either today. Relation selects **must** carry the foreign key — without it Eloquent matches nothing and returns the relation as `null` with no error.
+
+## Cache do detalhe de pessoa (`GET /pessoas/{id}`)
+
+- `App\Service\Pessoa\CachePessoa` keeps one Redis key per person, `pessoa:{cd_cliente}:{cd_pessoa}`, TTL **3600s**. `cd_cliente` is in the key because the data is tenant-scoped; without it a cache hit would bypass the `WHERE cd_cliente` the repository applies.
+- The cache holds the **entity** (every mapped column), and `?fields=` is applied afterwards by `PessoaResource`. That is why `PessoaRepository::buscarPorId()` deliberately does **not** honour a partial select — one key serves every `fields` combination.
+- `PUT`, `PATCH` and `DELETE` call `esquecer()` **after** a successful write. A write made outside this API (direct SQL, the legacy LMS) invalidates nothing, so the detail can be stale for up to an hour — documented in the endpoint's Swagger.
+- 404s are not cached, and `GET /pessoas` (list) is not cached at all. Corrupt or old-format JSON in the key falls back to the database instead of answering with a partial record.
+- `ds_senha` is not in the map, so the bcrypt hash never reaches Redis — `PessoaServiceTest::testCacheNaoGuardaSenha` guards that.
 
 ## Testing
 
@@ -142,6 +151,7 @@ Standard Hyperf skeleton wiring — most "framework" behavior lives in vendor pa
 - A FK violation surfaces as SQLSTATE **23000**, which `DatabaseExceptionHandler` maps to **409** — the same status as "login already exists". A 409 you did not expect is probably a bad FK, not a duplicate. Check `runtime/logs/hyperf.log`.
 - The suite reports many **risky** tests (`did not remove its own error handlers`). That is the Hyperf harness — `ErrorExceptionHandler` registers a handler at boot and never removes it. Not a regression; only errors and failures count.
 - Assertions must prove the **value**, not the shape, wherever the failure mode is silent. `relationLoaded() === true` stays true even when the relation failed to match; only `assertNotNull($pessoa->fisica)` catches that.
+- To prove a **cache hit**, change the row with `Db::table(...)->update(...)` (which the API never sees) and assert the response still shows the old value. Asserting only that the Redis key exists would pass even if every read still went to the database. Tests that create people must drop the cache key in `tearDown()` — the key outlives the row by an hour.
 
 ## Code style
 

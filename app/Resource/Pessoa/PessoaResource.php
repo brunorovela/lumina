@@ -15,8 +15,14 @@ namespace App\Resource\Pessoa;
 use App\Model\Pessoa\UnimPessoa;
 use App\Support\Campos\SelecaoDeCampos;
 use DateTimeInterface;
-use Hyperf\Database\Model\Model;
 
+/**
+ * Serializa APENAS colunas de unim_pessoa. Não toca relação nenhuma: pessoa física e
+ * jurídica são recursos próprios, e o mapa de campos não tem mais `fisica.*`/`juridica.*`
+ * (ver MapaDeCamposPessoa). Por consequência não existe mais risco de N+1 aqui — antes o
+ * Resource precisava de relationLoaded() antes de tocar a relação para não disparar lazy
+ * load uma vez por linha da listagem.
+ */
 class PessoaResource
 {
     /**
@@ -29,39 +35,14 @@ class PessoaResource
     public static function um(UnimPessoa $pessoa, ?SelecaoDeCampos $selecao = null): array
     {
         // completa() e não selecao(padraoEhTudo: true): sem seleção significa resposta de
-        // ESCRITA, e ali a PII tem de vir — filtrar esconderia o que o servidor gravou.
+        // ESCRITA, e ali campo marcado sensível tem de vir — filtrar esconderia o que o
+        // servidor gravou.
         $selecao ??= SelecaoDeCampos::completa(MapaDeCamposPessoa::mapa(), MapaDeCamposPessoa::CHAVE_LOCAL);
 
         $saida = [];
 
         foreach ($selecao->campos() as $chave) {
-            $campo = $selecao->campo($chave);
-
-            if (! $campo->ehDeRelacao()) {
-                $saida[$chave] = self::valor($pessoa->getAttribute($campo->coluna));
-
-                continue;
-            }
-
-            $relacao = (string) $campo->relacao;
-
-            // A chave existe sempre que foi pedida; o valor é que pode ser nulo (pessoa do
-            // outro tipo). Isso mantém a forma da resposta estável para o cliente.
-            if (! array_key_exists($relacao, $saida)) {
-                $saida[$relacao] = null;
-            }
-
-            // relationLoaded() antes de getRelation(): tocar uma relação não carregada
-            // dispararia lazy load, uma query por linha da listagem (N+1).
-            $filho = $pessoa->relationLoaded($relacao) ? $pessoa->getRelation($relacao) : null;
-
-            if (! $filho instanceof Model) {
-                continue;
-            }
-
-            $valores = is_array($saida[$relacao]) ? $saida[$relacao] : [];
-            $valores[$campo->coluna] = self::valor($filho->getAttribute($campo->coluna));
-            $saida[$relacao] = $valores;
+            $saida[$chave] = self::valor($pessoa->getAttribute($selecao->campo($chave)->coluna));
         }
 
         return $saida;
@@ -90,8 +71,11 @@ class PessoaResource
      * porque toArray() exporia coluna que o mapa não expõe. Sem isto o JSON sairia
      * "1990-05-12T00:00:00.000000Z" onde a documentação promete "1990-05-12".
      *
-     * Hoje todo campo de data exposto é data pura. No dia em que um datetime entrar no
-     * mapa, esta regra precisa passar a distinguir os dois.
+     * Hoje o mapa de pessoa não expõe coluna de data nenhuma (as datas de nascimento e de
+     * expedição saíram com pessoa física), então esta conversão está sem uso efetivo — fica
+     * porque é o contrato de saída de data desta API, e coluna de data de unim_pessoa
+     * (dt_cadastro, dt_base) é candidata natural a entrar no mapa. No dia em que um
+     * datetime entrar, esta regra precisa passar a distinguir data de data-e-hora.
      */
     private static function valor(mixed $valor): mixed
     {

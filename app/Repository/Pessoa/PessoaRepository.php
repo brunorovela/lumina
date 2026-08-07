@@ -14,133 +14,64 @@ namespace App\Repository\Pessoa;
 
 use App\Exception\Pessoa\PessoaNaoEncontradaException;
 use App\Model\Pessoa\UnimPessoa;
-use App\Model\Pessoa\UnimPessoaFisica;
-use App\Model\Pessoa\UnimPessoaJuridica;
 use App\Resource\Pessoa\MapaDeCamposPessoa;
 use App\Support\Campos\SelecaoDeCampos;
 use App\Support\Tipo;
-use Closure;
 use Hyperf\Database\Model\Builder;
 use Hyperf\Database\Model\Collection;
-use Hyperf\Database\Model\Model;
-use Hyperf\Database\Model\Relations\Relation;
-use Hyperf\DbConnection\Db;
 use RuntimeException;
 
+/**
+ * Só unim_pessoa. Não existe mais transação com filho, nem eager load de
+ * fisica/juridica: quem grava e lê unim_pessoa_fisica/unim_pessoa_juridica é o recurso
+ * dessas tabelas, não este.
+ *
+ * CONSEQUÊNCIA CONHECIDA de tirar a escrita do filho daqui: um PUT que inverte
+ * sn_pessoa_juridica não apaga mais a linha do tipo antigo. Antes isso era feito nesta
+ * classe (e destruía CPF sem confirmação). Agora uma pessoa que vira jurídica pode ficar
+ * com a linha de unim_pessoa_fisica preenchida — dado do outro recurso, que só o outro
+ * recurso pode apagar.
+ */
 class PessoaRepository implements PessoaRepositoryInterface
 {
     /**
      * @param array<string, mixed> $dadosPessoa
-     * @param null|array<string, mixed> $dadosFisica
-     * @param null|array<string, mixed> $dadosJuridica
      */
-    public function criar(array $dadosPessoa, ?array $dadosFisica, ?array $dadosJuridica): UnimPessoa
+    public function criar(array $dadosPessoa): UnimPessoa
     {
-        // Db::transaction() devolve mixed (repassa o que a closure retornar), e fresh()
-        // pode devolver null se a linha desaparecer no meio. O guard troca um TypeError
-        // opaco por erro explícito.
-        $pessoa = Db::transaction(function () use ($dadosPessoa, $dadosFisica, $dadosJuridica) {
-            $pessoa = UnimPessoa::create($dadosPessoa);
-
-            if ($dadosFisica !== null) {
-                UnimPessoaFisica::create(['cd_pessoa' => $pessoa->cd_pessoa, ...$dadosFisica]);
-            }
-
-            if ($dadosJuridica !== null) {
-                UnimPessoaJuridica::create(['cd_pessoa' => $pessoa->cd_pessoa, ...$dadosJuridica]);
-            }
-
-            return $pessoa->fresh(['fisica', 'juridica']);
-        });
-
-        return self::garantirPessoa($pessoa);
+        // fresh() para a resposta refletir a linha gravada (colunas com default no banco
+        // inclusas), e não só o que o payload mandou. Pode devolver null se a linha
+        // desaparecer no meio; o guard troca um TypeError opaco por erro explícito.
+        return self::garantirPessoa(UnimPessoa::create($dadosPessoa)->fresh());
     }
 
     /**
      * @param array<string, mixed> $dadosPessoa
-     * @param null|array<string, mixed> $dadosFisica
-     * @param null|array<string, mixed> $dadosJuridica
      */
-    public function atualizar(
-        int $cdPessoa,
-        int $cdCliente,
-        array $dadosPessoa,
-        ?array $dadosFisica,
-        ?array $dadosJuridica,
-        bool $ehIsentoDeFisicaJuridica = false
-    ): UnimPessoa {
-        $pessoaAtualizada = Db::transaction(function () use (
-            $cdPessoa,
-            $cdCliente,
-            $dadosPessoa,
-            $dadosFisica,
-            $dadosJuridica,
-            $ehIsentoDeFisicaJuridica
-        ) {
-            $pessoa = UnimPessoa::where('cd_pessoa', $cdPessoa)->where('cd_cliente', $cdCliente)->first();
+    public function atualizar(int $cdPessoa, int $cdCliente, array $dadosPessoa): UnimPessoa
+    {
+        // cd_cliente no WHERE: sem ele um id de outro tenant seria atualizável.
+        $pessoa = UnimPessoa::where('cd_pessoa', $cdPessoa)->where('cd_cliente', $cdCliente)->first();
 
-            if ($pessoa === null) {
-                throw new PessoaNaoEncontradaException();
-            }
+        if ($pessoa === null) {
+            throw new PessoaNaoEncontradaException();
+        }
 
-            $pessoa->update($dadosPessoa);
+        $pessoa->update($dadosPessoa);
 
-            // Quando quem chamou informa o tipo pessoa (PUT — sempre manda
-            // sn_pessoa_juridica) E a pessoa NÃO é isenta de física/jurídica, o filho do
-            // tipo que NÃO se aplica mais precisa ser apagado, senão uma pessoa que trocou
-            // de física pra jurídica (ou vice-versa) fica com as duas linhas filhas
-            // preenchidas ao mesmo tempo (dado órfão, num schema compartilhado com o LMS
-            // legado). Isso é seguro mesmo quando o tipo NÃO mudou: a FK
-            // unim_pessoa_fisica/unim_pessoa_juridica -> unim_pessoa é ON DELETE RESTRICT
-            // no sentido pessoa->filho (apagar o pai com filho vivo é que seria
-            // bloqueado); apagar o filho aqui nunca toca o pai.
-            //
-            // REGRESSÃO CORRIGIDA (re-review pós-fix do Critical 1): pessoas isentas
-            // (login admin/administrador) sempre têm $dadosFisica E $dadosJuridica null —
-            // não porque o tipo mudou, mas porque a regra de negócio nunca aplica
-            // física/jurídica a elas. Sem o guard $ehIsentoDeFisicaJuridica, um PUT válido
-            // nessas pessoas apagava qualquer fisica/juridica órfã de dado legado
-            // (reproduzido de verdade contra cd_pessoa=1/2, cd_cliente=23). Pessoa isenta
-            // NUNCA tem fisica/juridica mexida aqui, independente do que vier nos arrays.
-            //
-            // No PATCH (atualizarParcial) dadosPessoa nunca contém sn_pessoa_juridica, então
-            // este bloco não roda ali — um PATCH que só manda ds_nome não pode apagar o
-            // filho existente só porque não reenviou os campos dele.
-            if (array_key_exists('sn_pessoa_juridica', $dadosPessoa) && ! $ehIsentoDeFisicaJuridica) {
-                if ($dadosFisica === null) {
-                    UnimPessoaFisica::where('cd_pessoa', $cdPessoa)->delete();
-                }
-
-                if ($dadosJuridica === null) {
-                    UnimPessoaJuridica::where('cd_pessoa', $cdPessoa)->delete();
-                }
-            }
-
-            if ($dadosFisica !== null) {
-                UnimPessoaFisica::updateOrCreate(['cd_pessoa' => $cdPessoa], $dadosFisica);
-            }
-
-            if ($dadosJuridica !== null) {
-                UnimPessoaJuridica::updateOrCreate(['cd_pessoa' => $cdPessoa], $dadosJuridica);
-            }
-
-            return $pessoa->fresh(['fisica', 'juridica']);
-        });
-
-        return self::garantirPessoa($pessoaAtualizada);
+        return self::garantirPessoa($pessoa->fresh());
     }
 
-    /**
-     * @param null|SelecaoDeCampos $selecao null significa contrato completo
-     */
-    public function buscarPorId(int $cdPessoa, int $cdCliente, ?SelecaoDeCampos $selecao = null): ?UnimPessoa
+    public function buscarPorId(int $cdPessoa, int $cdCliente): ?UnimPessoa
     {
-        // completa(): este fallback é leitura INTERNA (PessoaService::atualizarParcial()
-        // chama buscar() sem seleção só para descobrir o tipo da pessoa). Regra de
-        // exposição de PII é do contrato HTTP, e quem a aplica é o Controller.
-        $selecao ??= SelecaoDeCampos::completa(MapaDeCamposPessoa::mapa(), MapaDeCamposPessoa::CHAVE_LOCAL);
+        // Todas as colunas do mapa, sempre: o recorte de ?fields= do detalhe acontece na
+        // serialização, porque o cache do endpoint é por entidade (uma chave por pessoa,
+        // ver App\Service\Pessoa\CachePessoa). SELECT parcial aqui faria cada combinação de
+        // fields precisar da própria chave de cache.
+        $query = UnimPessoa::query();
+        $query->select(MapaDeCamposPessoa::colunas());
 
-        return self::consulta($selecao)
+        return $query
             ->where('cd_pessoa', $cdPessoa)
             ->where('cd_cliente', $cdCliente)
             ->first();
@@ -155,13 +86,9 @@ class PessoaRepository implements PessoaRepositoryInterface
     public function listar(int $cdCliente, array $filtros, int $page, int $perPage, ?SelecaoDeCampos $selecao = null): array
     {
         // completa(): hoje nenhum chamador interno passa null aqui — PessoaController
-        // sempre resolve e passa uma SelecaoDeCampos explícita (é dali que vem a regra de
-        // PII do contrato HTTP). Este fallback só existe para o método ter um
-        // comportamento definido se um dia alguém chamar listar() sem seleção; o default
-        // é deliberadamente sem filtro porque quem decide o que o cliente HTTP vê é o
-        // Controller, não este Repository — um chamador HTTP que vier a depender deste
-        // fallback precisa aplicar a exclusão de sensível ele mesmo, assim como o
-        // Controller já faz hoje via MapaDeCamposPessoa::selecao().
+        // sempre resolve e passa uma SelecaoDeCampos explícita. Este fallback só existe
+        // para o método ter comportamento definido se um dia alguém chamar listar() sem
+        // seleção.
         $selecao ??= SelecaoDeCampos::completa(MapaDeCamposPessoa::mapa(), MapaDeCamposPessoa::CHAVE_LOCAL);
 
         $query = self::consulta($selecao)->where('cd_cliente', $cdCliente);
@@ -215,25 +142,21 @@ class PessoaRepository implements PessoaRepositoryInterface
     private static function garantirPessoa(mixed $pessoa): UnimPessoa
     {
         if (! $pessoa instanceof UnimPessoa) {
-            throw new RuntimeException('Transação de pessoa não devolveu o registro gravado.');
+            throw new RuntimeException('Escrita de pessoa não devolveu o registro gravado.');
         }
 
         return $pessoa;
     }
 
     /**
-     * Monta a consulta com o SELECT parcial e só as relações pedidas. É o ponto onde a
-     * seleção deixa de ser contrato de API e passa a ser SQL.
+     * Monta a consulta da listagem com o SELECT parcial. É o ponto onde a seleção deixa de
+     * ser contrato de API e passa a ser SQL. Não há mais `with()`: o mapa não tem relação.
      *
      * @return Builder<UnimPessoa>
      */
     private static function consulta(SelecaoDeCampos $selecao): Builder
     {
         $query = UnimPessoa::query();
-
-        foreach ($selecao->relacoes() as $relacao => $colunas) {
-            $query->with([$relacao => self::selecionar($colunas)]);
-        }
 
         // select() só existe em Query\Builder e chega ao Model\Builder via @mixin (mesmo
         // gap de tipagem do forPage() já documentado no ignoreErrors do phpstan.neon.dist):
@@ -243,22 +166,5 @@ class PessoaRepository implements PessoaRepositoryInterface
         $query->select($selecao->colunas());
 
         return $query;
-    }
-
-    /**
-     * O callback do with() recebe a Relation (ex.: HasOne), não o Builder: o Eloquent
-     * chama $constraints($relation) em eagerLoadRelation(). Tipar o parâmetro como Builder
-     * derruba em runtime com TypeError — Relation não é um Builder, apenas repassa select()
-     * a ele via @mixin/__call.
-     *
-     * @param string[] $colunas
-     *
-     * @return Closure(Relation<Model, Model, mixed>): void
-     */
-    private static function selecionar(array $colunas): Closure
-    {
-        return static function (Relation $consulta) use ($colunas): void {
-            $consulta->select($colunas);
-        };
     }
 }

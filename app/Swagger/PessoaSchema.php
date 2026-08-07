@@ -22,50 +22,25 @@ use Hyperf\Swagger\Annotation as OA;
  */
 #[OA\Schema(
     schema: 'Pessoa',
-    description: 'Forma de um registro de pessoa. Usado tanto por GET /pessoas/{id} (sujeito a ?fields=, e SEM dado '
-        . 'pessoal no default — ver a propriedade fisica) quanto pelas respostas de POST/PUT/PATCH (sempre completas, '
-        . 'dado pessoal incluso, porque escrita ignora ?fields=). '
+    description: 'Forma de um registro de pessoa — as colunas de unim_pessoa e nada mais. Usado por GET /pessoas/{id} '
+        . '(sujeito a ?fields=) e pelas respostas de POST/PUT/PATCH (sempre completas, porque escrita ignora ?fields=). '
         . 'Quais chaves aparecem de fato no detalhe depende de ?fields=: pedir `fields=ds_nome` devolve só ds_nome. '
-        . 'Uma chave de relação (fisica/juridica) só aparece se foi pedida, e vem null quando a pessoa é do outro tipo.',
+        . 'MUDANÇA DE CONTRATO: as propriedades `fisica` e `juridica` não existem mais — pessoa física '
+        . '(unim_pessoa_fisica, onde estão CPF, RG, filiação e nascimento) e pessoa jurídica (unim_pessoa_juridica, '
+        . 'CNPJ e nome fantasia) são recursos próprios, e /pessoas não lê nem escreve essas tabelas. Pedi-las em '
+        . '?fields= responde 422.',
     properties: [
-        new OA\Property(property: 'cd_pessoa', description: 'Identificador da pessoa.', type: 'integer', example: 1512099),
+        new OA\Property(property: 'cd_pessoa', description: 'Identificador da pessoa. É o :id de GET/PUT/PATCH/DELETE /pessoas/{id}.', type: 'integer', example: 1512099),
         new OA\Property(property: 'cd_cliente', description: 'Cliente (tenant) dono do registro. Vem sempre da identidade autenticada, nunca do payload.', type: 'integer', example: 20),
         new OA\Property(property: 'ds_nome', description: 'Nome de exibição.', type: 'string', example: 'Ana Souza', nullable: true),
         new OA\Property(property: 'ds_login', description: 'Login, único por cliente.', type: 'string', example: 'ana.souza', nullable: true),
-        new OA\Property(property: 'sn_pessoa_juridica', description: 'false = pessoa física, true = pessoa jurídica.', type: 'boolean', example: false, nullable: true),
         new OA\Property(
-            property: 'fisica',
-            description: 'Dados de pessoa física. null quando a pessoa é jurídica. '
-                . 'ATENÇÃO: ds_cpf, ds_identidade, ds_nome_mae, ds_nome_pai e dt_nascimento são dado pessoal e '
-                . 'NÃO vêm no default de GET /pessoas/{id} — só aparecem se pedidos por nome (fields=fisica.ds_cpf) '
-                . 'ou por curinga (fields=fisica.* ou fields=*). Resposta de POST/PUT/PATCH traz todos.',
-            properties: [
-                new OA\Property(property: 'ds_nome_oficial', description: 'Nome em documento. Obrigatório ao criar pessoa física.', type: 'string', example: 'Ana Souza'),
-                new OA\Property(property: 'ds_nome_social', type: 'string', example: 'Ana', nullable: true),
-                new OA\Property(property: 'ds_nome_mae', description: 'Dado pessoal: fora do default, só com fields explícito.', type: 'string', example: 'Maria Souza', nullable: true),
-                new OA\Property(property: 'ds_nome_pai', description: 'Dado pessoal: fora do default, só com fields explícito.', type: 'string', example: 'Jose Souza', nullable: true),
-                new OA\Property(property: 'ds_cpf', description: 'Dado pessoal: fora do default, só com fields explícito. Gravado e devolvido SEM máscara, mesmo que enviado com (ou como número JSON sem aspas).', type: 'string', example: '52998224725', nullable: true),
-                new OA\Property(property: 'ds_identidade', description: 'Dado pessoal: fora do default, só com fields explícito.', type: 'string', example: '123456789', nullable: true),
-                new OA\Property(property: 'ds_orgao_estado', description: 'UF do órgão expedidor da identidade.', type: 'string', example: 'SP', nullable: true),
-                new OA\Property(property: 'ds_identidade_orgao_exp', description: 'Órgão expedidor da identidade.', type: 'string', example: 'SSP', nullable: true),
-                new OA\Property(property: 'dt_identidade_expedicao', description: 'Data no formato Y-m-d. Não pode ser futura nem anterior a dt_nascimento quando as duas vêm no mesmo payload.', type: 'string', format: 'date', example: '2015-03-01', nullable: true),
-                new OA\Property(property: 'dt_nascimento', description: 'Data no formato Y-m-d, não pode ser futura. Dado pessoal: fora do default, só com fields explícito.', type: 'string', format: 'date', example: '1990-05-12', nullable: true),
-                new OA\Property(property: 'ds_sexo', description: 'Na escrita aceita apenas f, m ou null (espaços nas pontas são cortados; F e M maiúsculo também são aceitos e gravados em minúsculo). '
-                    . 'A LEITURA pode devolver outros valores: o banco legado tem dado fora desse domínio (já visto: n, a, o, b e string vazia) e a API não mente sobre o que está gravado. '
-                    . 'Por isso este campo, aqui na LEITURA, não declara enum — um enum reprovaria exatamente os valores legados que a API precisa devolver. O enum f/m vale só para o corpo de POST/PUT/PATCH.', type: 'string', example: 'f', nullable: true),
-                new OA\Property(property: 'cd_estado_civil', description: 'Código de saas_estado_civil. Traduza o rótulo em GET /estados-civis — a leitura de pessoa devolve o código, não o nome.', type: 'integer', example: 37, nullable: true),
-            ],
-            type: 'object',
-            nullable: true
-        ),
-        new OA\Property(
-            property: 'juridica',
-            description: 'Dados de pessoa jurídica. null quando a pessoa é física.',
-            properties: [
-                new OA\Property(property: 'ds_cnpj', description: 'Gravado e devolvido SEM máscara, mesmo que enviado com (ou como número JSON sem aspas).', type: 'string', example: '00000000000191'),
-                new OA\Property(property: 'ds_nome_fantasia', type: 'string', example: 'ACME Servicos'),
-            ],
-            type: 'object',
+            property: 'sn_pessoa_juridica',
+            description: 'false = pessoa física, true = pessoa jurídica. É só a declaração de tipo gravada em '
+                . 'unim_pessoa: não garante que exista (nem que não exista) registro em unim_pessoa_fisica ou '
+                . 'unim_pessoa_juridica, porque esta API não mexe nessas tabelas.',
+            type: 'boolean',
+            example: false,
             nullable: true
         ),
     ],
